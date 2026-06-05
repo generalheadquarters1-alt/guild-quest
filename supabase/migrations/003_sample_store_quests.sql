@@ -1,0 +1,117 @@
+-- Optional sample quests for amusement / retail store pilot operation.
+-- Safe to re-run: titles are used to avoid duplicate sample rows.
+
+insert into public.quests (
+  requester,
+  title,
+  level,
+  priority,
+  estimated_time,
+  description,
+  challenger,
+  successor1,
+  successor2,
+  status
+)
+select
+  requester,
+  title,
+  level,
+  priority,
+  estimated_time,
+  description,
+  challenger,
+  successor1,
+  successor2,
+  status
+from (
+  values
+    (
+      '早番リーダー',
+      '開店前の景品棚フェイスアップ',
+      'Easy',
+      'A',
+      '20分',
+      '入口側と新景品コーナーを中心に、欠品感が出ないよう前出しと向きの統一を行う。',
+      null,
+      null,
+      null,
+      'open'
+    ),
+    (
+      'フロア担当',
+      'メダル補充と貸出機まわり確認',
+      'Normal',
+      'S',
+      '15分',
+      'ピーク前にメダル残量、エラー表示、周辺の落下物を確認する。異常があれば社員へ共有。',
+      null,
+      null,
+      null,
+      'open'
+    ),
+    (
+      '遅番リーダー',
+      '閉店前の忘れ物チェック',
+      'Novice',
+      'B',
+      '10分',
+      '筐体まわり、ベンチ、カウンター付近を確認し、発見物は所定の保管場所へ移す。',
+      '佐藤',
+      null,
+      null,
+      'succession_needed'
+    ),
+    (
+      '店長',
+      '週末イベントPOPの差し替え',
+      'Hard',
+      'A',
+      '45分',
+      '古い告知を外し、週末イベントのPOPを指定位置へ掲示。掲示後に写真を共有する。',
+      '鈴木',
+      '高橋',
+      null,
+      'in_progress'
+    ),
+    (
+      'カウンター',
+      'レジ横消耗品の在庫確認',
+      'Easy',
+      'C',
+      '15分',
+      'レシート紙、袋、清掃シート、筆記具を確認。不足があれば発注メモに追記する。',
+      null,
+      null,
+      null,
+      'open'
+    ),
+    (
+      '社員連絡',
+      '故障中POPの回収漏れ確認',
+      'Normal',
+      'B',
+      '20分',
+      '復旧済みの筐体に古い故障中POPが残っていないか確認し、残っていれば回収する。',
+      '田中',
+      null,
+      null,
+      'succession_needed'
+    )
+) as sample (
+  requester,
+  title,
+  level,
+  priority,
+  estimated_time,
+  description,
+  challenger,
+  successor1,
+  successor2,
+  status
+)
+where not exists (
+  select 1
+  from public.quests q
+  where q.title = sample.title
+);
