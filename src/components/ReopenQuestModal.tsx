@@ -39,17 +39,17 @@ export function ReopenQuestModal({
     >
       <button
         type="button"
-        className="modal-backdrop absolute inset-0 bg-black/75 backdrop-blur-sm"
+        className="modal-backdrop absolute inset-0 bg-black/80"
         aria-label="閉じる"
         onClick={disabled ? undefined : onClose}
       />
-      <div className="modal-panel relative rpg-frame rounded-t-2xl sm:rounded-xl w-full max-w-md">
-        <header className="px-5 py-4 border-b border-[var(--color-gold)]/20">
+      <div className="modal-panel relative rpg-frame w-full max-w-md">
+        <header className="px-5 py-4 border-b-2 border-[var(--color-gold)]/35">
           <h2
             id="reopen-title"
-            className="text-lg font-bold gold-text"
+            className="pixel-window-title text-lg font-bold"
           >
-            ↻ クエスト再掲
+            クエスト再掲
           </h2>
           <p className="text-xs text-slate-400 mt-1 line-clamp-2">{quest.title}</p>
         </header>

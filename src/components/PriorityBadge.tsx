@@ -10,7 +10,7 @@ const STYLES: Record<Priority, string> = {
 export function PriorityBadge({ priority }: { priority: Priority }) {
   return (
     <span
-      className={`inline-flex items-center justify-center min-w-[1.75rem] px-1.5 py-0.5 text-xs font-bold border rounded font-[family-name:var(--font-display)] ${STYLES[priority]}`}
+      className={`pixel-chip inline-flex items-center justify-center min-w-[1.75rem] px-1.5 py-0.5 text-xs font-bold ${STYLES[priority]}`}
     >
       {priority} Rank
     </span>

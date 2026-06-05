@@ -28,7 +28,7 @@ export function CompletedQuestLog({
       {entries.map((entry) => (
         <li
           key={entry.quest.id}
-          className="rounded-lg border border-white/5 bg-black/25 px-3 py-3 sm:px-4"
+          className="border-2 border-white/15 bg-black/25 px-3 py-3 sm:px-4 shadow-[3px_3px_0_#000]"
         >
           <div className="flex flex-wrap items-start justify-between gap-2 gap-y-1">
             <div className="min-w-0 flex-1">

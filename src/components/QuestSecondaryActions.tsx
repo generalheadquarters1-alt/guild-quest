@@ -58,10 +58,10 @@ function SecondaryButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`min-h-11 px-2 text-[11px] underline-offset-2 hover:underline transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
+      className={`min-h-11 px-3 text-[11px] border-2 shadow-[2px_2px_0_#000] transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
         variant === "danger"
-          ? "text-slate-500 hover:text-red-400/90"
-          : "text-slate-500 hover:text-slate-300"
+          ? "border-red-900/45 bg-red-950/10 text-red-900 hover:text-red-700"
+          : "border-stone-700/45 bg-stone-900/10 text-stone-800 hover:text-stone-950"
       }`}
     >
       {children}

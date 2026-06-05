@@ -15,7 +15,7 @@ const CONFIG: Record<
       "border-[var(--color-mana)]/50 text-[var(--color-mana)] bg-[var(--color-mana)]/10",
   },
   succession_needed: {
-    label: "🔗 継承募集",
+    label: "🔗 助っ人募集",
     className:
       "border-[var(--color-rare)]/55 text-[var(--color-rare)] bg-[var(--color-rare)]/12 shadow-[0_0_14px_rgba(206,147,216,0.12)]",
   },
@@ -30,7 +30,7 @@ export function QuestStatusBadge({ status }: { status: QuestStatus }) {
   const { label, className } = CONFIG[status];
   return (
     <span
-      className={`text-[10px] px-2 py-1 rounded border tracking-wider whitespace-nowrap ${className}`}
+      className={`quest-status-badge pixel-chip text-[10px] px-2 py-1 tracking-wider whitespace-nowrap ${className}`}
     >
       {label}
     </span>

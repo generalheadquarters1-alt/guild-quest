@@ -11,7 +11,6 @@ import {
 } from "../lib/questUtils";
 import { LevelBadge } from "./LevelBadge";
 import { PriorityBadge } from "./PriorityBadge";
-import { QuestSecondaryActions } from "./QuestSecondaryActions";
 import { QuestStatusBadge } from "./QuestStatusBadge";
 
 const STATUS_RING: Record<Quest["status"], string> = {
@@ -38,6 +37,7 @@ interface QuestCardProps {
   onRequestComplete: (questId: number) => void;
   onEdit: (questId: number) => void;
   onRequestDelete: (questId: number) => void;
+  onOpenDetail: (questId: number) => void;
   disabled?: boolean;
   featured?: boolean;
 }
@@ -53,12 +53,12 @@ function Field({
 }) {
   const empty = value === "—";
   return (
-    <div className="min-w-0 rounded-md border border-white/6 bg-black/18 px-2.5 py-2">
-      <span className="text-[10px] tracking-wider text-[var(--color-gold-dim)]/90">
+    <div className="min-w-0 border border-white/6 bg-black/18 px-2.5 py-2 shadow-[2px_2px_0_rgba(0,0,0,0.22)]">
+      <span className="quest-pixel-label block text-[10px] tracking-wider text-[var(--color-gold-dim)]/90">
         {label}
       </span>
       <span
-        className={`text-xs sm:text-sm truncate ${
+        className={`block text-xs sm:text-sm truncate ${
           empty
             ? "text-slate-500 italic"
             : highlight
@@ -80,8 +80,7 @@ export function QuestCard({
   onBecomeSuccessor,
   onRequestSuccession,
   onRequestComplete,
-  onEdit,
-  onRequestDelete,
+  onOpenDetail,
   disabled = false,
   featured = false,
 }: QuestCardProps) {
@@ -112,10 +111,12 @@ export function QuestCard({
       : priorityScore >= 12
         ? "quest-card-danger-mid"
         : "";
+  const status = getStatusPresentation(quest);
+  const questIcon = getQuestIcon(quest);
 
   return (
     <article
-      className={`rpg-frame quest-card tap-card rounded-lg p-4 sm:p-5 transition-all duration-300 hover:border-[var(--color-gold)]/60 hover:shadow-[0_8px_32px_rgba(0,0,0,0.5),0_0_24px_rgba(212,168,83,0.12)] animate-fade-up ${STATUS_RING[quest.status]} ${dangerClass} ${
+      className={`quest-card quest-card-compact tap-card p-3 transition-all duration-300 animate-fade-up ${STATUS_RING[quest.status]} ${dangerClass} ${
         quest.urgency >= 4 ? "quest-card-emergency" : ""
       } ${featured ? "quest-card-featured" : ""}`}
       style={{
@@ -124,65 +125,85 @@ export function QuestCard({
       }}
     >
       {(isOpen || needsSuccessor || isNew || isMine || almostFullParty) && (
-        <div className="flex flex-wrap items-center gap-1.5 mb-3 -mt-1">
+        <div className="compact-badges flex flex-wrap items-center gap-1.5 mb-2 -mt-1 pl-1">
           {isNew && <CompactBadge tone="mana">新着</CompactBadge>}
           {quest.urgency >= 4 && <CompactBadge tone="danger">緊急</CompactBadge>}
           {isOpen && (
             <CompactBadge tone="gold">未受注</CompactBadge>
           )}
-          {needsSuccessor && <CompactBadge tone="rare">継承募集</CompactBadge>}
+          {needsSuccessor && <CompactBadge tone="rare">助っ人募集</CompactBadge>}
           {isMine && <CompactBadge tone="xp">自分</CompactBadge>}
           {almostFullParty && <CompactBadge tone="mana">あと1枠</CompactBadge>}
         </div>
       )}
 
-      <header className="mb-3 pb-3 border-b border-[var(--color-gold)]/15">
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div className="min-w-0 flex-1 basis-[14rem]">
-            <p className="text-[10px] sm:text-xs text-[var(--color-mana)]/90 mb-1 tracking-wider">
-              依頼者: <span className="text-slate-400">{quest.requester}</span>
-            </p>
-            <h3 className="text-lg sm:text-xl font-semibold text-slate-50 leading-snug break-words">
-              <span className="gold-text">QUEST</span>{" "}
-              <span>{quest.title}</span>
-            </h3>
-          </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <PriorityBadge priority={quest.priority} />
-            <LevelBadge level={quest.level} />
-          </div>
-        </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <QuestStatusBadge status={quest.status} />
-          <span className="rounded border border-red-400/35 bg-red-500/10 px-2 py-1 text-[10px] font-bold text-red-200">
-            危険度 {priorityScore}
-          </span>
-          <span className="text-[11px] text-slate-400">
-            {STATUS_COPY[quest.status]}
-          </span>
-        </div>
-      </header>
+      <div className={`notice-ribbon ${status.ribbonClass}`}>
+        {status.label}
+      </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-3">
-        <Field label="推定時間" value={quest.estimatedTime} />
+      <div className="quest-notice-layout">
+        <div className="quest-notice-icon compact-icon" aria-hidden>
+          <span>{questIcon}</span>
+        </div>
+
+        <div className="quest-notice-main min-w-0">
+          <header className="border-b-2 border-[rgba(74,46,25,0.28)] pb-2">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <h3 className="pixel-title text-lg sm:text-xl font-semibold text-slate-50 leading-snug break-words line-clamp-2">
+                  {quest.title}
+                </h3>
+                <p className="quest-pixel-label mt-1 text-[10px] sm:text-xs text-[var(--color-mana)]/90 tracking-wider">
+                  推定時間:{" "}
+                  <span className="text-slate-400">{quest.estimatedTime}</span>
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <PriorityBadge priority={quest.priority} />
+                <LevelBadge level={quest.level} />
+              </div>
+            </div>
+          </header>
+
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <GaugeField label="緊急度" value={quest.urgency} />
+            <GaugeField label="重要度" value={quest.importance} />
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <QuestStatusBadge status={quest.status} />
+            <span className="text-[11px] text-slate-400">
+              {STATUS_COPY[quest.status]}
+            </span>
+          </div>
+
+        </div>
+
+        <aside className="quest-rank-panel">
+          <p className="quest-pixel-label text-[10px]">依頼ランク</p>
+          <strong>{priorityScore}</strong>
+          <span>
+            ({quest.urgency}×{quest.importance})
+          </span>
+          <span className={`quest-seal ${status.sealClass}`} aria-hidden>
+            ✦
+          </span>
+        </aside>
+      </div>
+
+      <div className="quest-party-row grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
         <Field label="挑戦者" value={quest.challenger} highlight />
-        <GaugeField label="緊急度" value={quest.urgency} />
-        <GaugeField label="重要度" value={quest.importance} />
+        <button
+          type="button"
+          onClick={() => onOpenDetail(quest.id)}
+          className="quest-detail-button min-h-11 border border-white/6 bg-black/18 px-2.5 py-2 text-left text-xs font-bold shadow-[2px_2px_0_rgba(0,0,0,0.22)]"
+        >
+          ▶ 詳細
+        </button>
       </div>
-
-      <div className="grid grid-cols-2 gap-2.5 mb-3">
-        <Field label="継承者1" value={quest.successor1} />
-        <Field label="継承者2" value={quest.successor2} />
-      </div>
-
-      {quest.description && (
-        <p className="text-xs text-slate-400 leading-relaxed mb-4 line-clamp-2 sm:line-clamp-3">
-          {quest.description}
-        </p>
-      )}
 
       {hasPrimaryAction && (
-        <div className="grid grid-cols-1 sm:flex sm:flex-wrap gap-2 pt-3 border-t border-[var(--color-gold)]/10">
+        <div className="grid grid-cols-1 sm:flex sm:flex-wrap gap-2 mt-4 pt-3 border-t-2 border-[rgba(74,46,25,0.22)]">
           {showAccept && (
             <ActionButton
               variant="gold"
@@ -222,27 +243,30 @@ export function QuestCard({
         </div>
       )}
 
-      <QuestSecondaryActions
-        className={hasPrimaryAction ? "mt-3" : "mt-1 pt-2 border-t border-white/5"}
-        onEdit={() => onEdit(quest.id)}
-        onDelete={() => onRequestDelete(quest.id)}
-        disabled={disabled}
-      />
+      {!hasPrimaryAction && (
+        <button
+          type="button"
+          onClick={() => onOpenDetail(quest.id)}
+          className="quest-detail-button mt-3 min-h-11 w-full border-2 border-stone-700/45 bg-stone-900/10 px-3 text-sm font-bold shadow-[2px_2px_0_#000]"
+        >
+          ▶ 詳細
+        </button>
+      )}
     </article>
   );
 }
 
 function GaugeField({ label, value }: { label: string; value: number }) {
   return (
-    <div className="min-w-0 rounded-md border border-white/6 bg-black/18 px-2.5 py-2">
-      <span className="text-[10px] tracking-wider text-[var(--color-gold-dim)]/90">
+    <div className="min-w-0 border border-white/6 bg-black/18 px-2.5 py-2 shadow-[2px_2px_0_rgba(0,0,0,0.22)]">
+      <span className="quest-pixel-label block text-[10px] tracking-wider text-[var(--color-gold-dim)]/90">
         {label}
       </span>
       <span className="mt-1 flex gap-0.5" aria-label={`${label} ${value}`}>
         {[1, 2, 3, 4, 5].map((score) => (
           <span
             key={score}
-            className={score <= value ? "text-[var(--color-gold-bright)]" : "text-slate-700"}
+            className={score <= value ? (value >= 4 ? "text-red-800" : "text-amber-800") : "text-stone-400"}
           >
             ◆
           </span>
@@ -250,6 +274,50 @@ function GaugeField({ label, value }: { label: string; value: number }) {
       </span>
     </div>
   );
+}
+
+function getQuestIcon(quest: Quest) {
+  if (quest.status === "completed") return "✓";
+  if (quest.status === "succession_needed") return "🛡️";
+  if (quest.urgency >= 4) return "⚔️";
+  if (quest.status === "open") return "🎁";
+  return "📜";
+}
+
+function getStatusPresentation(quest: Quest) {
+  if (quest.status === "completed") {
+    return {
+      label: "達成済み",
+      ribbonClass: "notice-ribbon-completed",
+      sealClass: "quest-seal-completed",
+    };
+  }
+  if (quest.urgency >= 4) {
+    return {
+      label: "緊急!!",
+      ribbonClass: "notice-ribbon-danger",
+      sealClass: "quest-seal-danger",
+    };
+  }
+  if (quest.status === "succession_needed") {
+    return {
+      label: "助っ人募集",
+      ribbonClass: "notice-ribbon-rare",
+      sealClass: "quest-seal-rare",
+    };
+  }
+  if (quest.status === "open") {
+    return {
+      label: "未受注",
+      ribbonClass: "notice-ribbon-open",
+      sealClass: "quest-seal-open",
+    };
+  }
+  return {
+    label: "挑戦中",
+    ribbonClass: "notice-ribbon-progress",
+    sealClass: "quest-seal-progress",
+  };
 }
 
 function CompactBadge({
@@ -268,9 +336,7 @@ function CompactBadge({
   };
 
   return (
-    <span
-      className={`inline-flex min-h-6 items-center rounded-full border px-2 text-[10px] font-bold uppercase tracking-wider ${styles[tone]}`}
-    >
+    <span className={`pixel-chip inline-flex min-h-6 items-center px-2 text-[10px] font-bold uppercase tracking-wider ${styles[tone]}`}>
       {children}
     </span>
   );
@@ -299,8 +365,11 @@ function ActionButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`min-h-11 w-full sm:w-auto px-4 py-2 text-sm font-semibold rounded border transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0.5 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 ${styles[variant]}`}
+      className={`quest-btn-ghost min-h-11 w-full sm:w-auto px-4 py-2 text-sm font-semibold transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-45 ${styles[variant]}`}
     >
+      <span className="mr-1.5" aria-hidden>
+        ▶
+      </span>
       {children}
     </button>
   );

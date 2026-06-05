@@ -12,6 +12,65 @@ export async function fetchStaff(): Promise<PartyMember[]> {
   return (data as StaffRow[]).map(rowToStaffMember);
 }
 
+const ENTRY_AVATARS = ["🧙", "⚔️", "🛡️", "📜", "✨", "🎵", "🏹", "🔮"];
+
+export async function ensureStaffMember(name: string): Promise<PartyMember> {
+  const normalizedName = name.trim();
+  if (!normalizedName) {
+    throw new Error("冒険者名を入力してください");
+  }
+
+  const client = requireSupabase();
+  const { data: existing, error: existingError } = await client
+    .from("staff")
+    .select("*")
+    .eq("name", normalizedName)
+    .maybeSingle();
+
+  if (existingError) throw existingError;
+  if (existing) return rowToStaffMember(existing as StaffRow);
+
+  const { data: lastRows, error: sortError } = await client
+    .from("staff")
+    .select("sort_order")
+    .order("sort_order", { ascending: false })
+    .limit(1);
+
+  if (sortError) throw sortError;
+
+  const lastSort = ((lastRows?.[0] as { sort_order?: number } | undefined)
+    ?.sort_order ?? 0);
+  const insertPayload = {
+    name: normalizedName,
+    role: "冒険者",
+    avatar: resolveEntryAvatar(normalizedName),
+    hp: 100,
+    mp: 50,
+    status: "ready",
+    sort_order: lastSort + 1,
+  };
+
+  const { data: inserted, error: insertError } = await client
+    .from("staff")
+    .insert(insertPayload)
+    .select("*")
+    .single();
+
+  if (insertError) {
+    const { data: racedExisting, error: racedError } = await client
+      .from("staff")
+      .select("*")
+      .eq("name", normalizedName)
+      .maybeSingle();
+
+    if (racedError) throw racedError;
+    if (racedExisting) return rowToStaffMember(racedExisting as StaffRow);
+    throw insertError;
+  }
+
+  return rowToStaffMember(inserted as StaffRow);
+}
+
 export async function awardPlayerExp(
   awards: Array<{ name: string; exp: number }>,
 ): Promise<void> {
@@ -48,6 +107,14 @@ export async function awardPlayerExp(
 
   const failed = updates.find((result) => result.error);
   if (failed?.error) throw failed.error;
+}
+
+function resolveEntryAvatar(name: string): string {
+  const seed = Array.from(name).reduce(
+    (sum, char) => sum + char.charCodeAt(0),
+    0,
+  );
+  return ENTRY_AVATARS[seed % ENTRY_AVATARS.length];
 }
 
 function resolveFrame(level: number): string {

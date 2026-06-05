@@ -20,7 +20,7 @@ const LABELS: Record<QuestLevel, string> = {
 export function LevelBadge({ level }: { level: QuestLevel }) {
   return (
     <span
-      className={`inline-flex px-2 py-0.5 text-[10px] sm:text-xs font-semibold uppercase tracking-wider border rounded ${STYLES[level]}`}
+      className={`pixel-chip inline-flex px-2 py-0.5 text-[10px] sm:text-xs font-semibold uppercase tracking-wider ${STYLES[level]}`}
     >
       Lv {LABELS[level]}
     </span>

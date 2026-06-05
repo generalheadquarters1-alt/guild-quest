@@ -37,14 +37,14 @@ export function ConfirmModal({
     >
       <button
         type="button"
-        className="modal-backdrop absolute inset-0 bg-black/75 backdrop-blur-sm"
+        className="modal-backdrop absolute inset-0 bg-black/80"
         aria-label="キャンセル"
         onClick={disabled ? undefined : onCancel}
       />
-      <div className="modal-panel relative rpg-frame rounded-xl w-full max-w-sm p-5">
+      <div className="modal-panel relative rpg-frame w-full max-w-sm p-5">
         <h2
           id="confirm-title"
-          className="text-lg font-bold gold-text"
+          className="pixel-window-title text-lg font-bold"
         >
           {title}
         </h2>
@@ -62,7 +62,7 @@ export function ConfirmModal({
             type="button"
             onClick={onConfirm}
             disabled={disabled}
-            className={`flex-1 min-h-11 px-4 py-2 text-sm font-semibold rounded border transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${confirmClass}`}
+            className={`flex-1 min-h-11 px-4 py-2 text-sm font-semibold border-2 transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${confirmClass}`}
           >
             {confirmLabel}
           </button>

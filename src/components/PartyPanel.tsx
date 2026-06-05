@@ -8,10 +8,10 @@ const STATUS_LABEL: Record<PartyMember["status"], { text: string; color: string 
   };
 
 const FRAME_STYLES: Record<PartyMember["avatarFrame"], string> = {
-  bronze: "border-amber-700/70 bg-amber-950/30",
-  silver: "border-slate-300/70 bg-slate-400/10",
-  gold: "border-[var(--color-gold-bright)] bg-[var(--color-gold)]/14 shadow-[0_0_18px_rgba(212,168,83,0.24)]",
-  platinum: "border-cyan-200/80 bg-cyan-300/10 shadow-[0_0_20px_rgba(125,211,252,0.26)]",
+  bronze: "avatar-frame-bronze bg-amber-950/30",
+  silver: "avatar-frame-silver bg-slate-400/10",
+  gold: "avatar-frame-gold bg-[var(--color-gold)]/14",
+  platinum: "avatar-frame-platinum bg-cyan-300/10",
 };
 
 interface PartyPanelProps {
@@ -30,20 +30,25 @@ export function PartyPanel({
   className = "",
 }: PartyPanelProps) {
   return (
-    <aside className={`rpg-frame rounded-xl p-4 flex flex-col ${className}`}>
+    <aside className={`rpg-frame p-4 flex flex-col ${className}`}>
       <header className="mb-4 pb-3 border-b border-[var(--color-gold)]/20">
-        <h2 className="text-base sm:text-lg font-semibold gold-text flex items-center gap-2">
-          <span>👥</span> パーティ状況
-        </h2>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="pixel-window-title text-base sm:text-lg font-semibold">
+            冒険者パーティ
+          </h2>
+          <span className="pixel-chip px-2 py-1 text-xs text-slate-300">
+            {staff.length} / 10
+          </span>
+        </div>
         <p className="text-[10px] text-slate-500 mt-1 tracking-wider">
-          操作するメンバーを選択
+          操作する冒険者を選択
         </p>
       </header>
 
       {loading ? (
         <div className="flex flex-col gap-3 flex-1">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-24 rounded-lg bg-white/5 animate-pulse" />
+            <div key={i} className="h-24 border-2 border-white/20 bg-white/5 animate-pulse shadow-[3px_3px_0_#000]" />
           ))}
         </div>
       ) : staff.length === 0 ? (
@@ -60,10 +65,10 @@ export function PartyPanel({
                 <button
                   type="button"
                   onClick={() => onSelectPlayer(member.name)}
-                  className={`group tap-card w-full p-3 rounded-lg border text-left transition-all duration-300 animate-fade-up ${
+                  className={`party-member-card group tap-card pixel-menu-button w-full p-3 border text-left transition-all duration-300 animate-fade-up ${
                     isSelected
-                      ? "border-[var(--color-gold-bright)]/75 bg-[var(--color-gold)]/14 shadow-[0_0_0_1px_rgba(240,208,120,0.18)_inset,0_0_26px_rgba(212,168,83,0.2)]"
-                      : "border-white/5 bg-black/20 hover:border-[var(--color-gold)]/30 hover:bg-[var(--color-panel)]/50"
+                      ? "is-selected pl-7"
+                      : "border-white/20 bg-black/20 hover:border-[var(--color-gold)]/60 hover:bg-[var(--color-panel)]/80"
                   }`}
                   style={{
                     animationDelay: `${200 + i * 60}ms`,
@@ -72,7 +77,7 @@ export function PartyPanel({
                 >
                   <div className="flex items-center gap-3 mb-2">
                     <div
-                      className={`w-11 h-11 rounded-lg border-2 flex items-center justify-center text-lg transition-transform ${FRAME_STYLES[member.avatarFrame]} ${
+                      className={`pixel-avatar w-11 h-11 border-2 flex items-center justify-center text-lg transition-transform ${FRAME_STYLES[member.avatarFrame]} ${
                         isSelected
                           ? "scale-105"
                           : "group-hover:scale-105"
@@ -85,7 +90,7 @@ export function PartyPanel({
                         Lv {member.level} {member.name}
                         {isSelected && (
                           <span className="ml-1.5 text-[10px] text-[var(--color-gold-bright)]">
-                            ★ 選択中
+                            選択中
                           </span>
                         )}
                       </p>
@@ -125,9 +130,9 @@ export function PartyPanel({
 
       <footer className="mt-4 pt-3 border-t border-[var(--color-gold)]/15 text-center">
         <p className="text-[10px] text-slate-500 tracking-wider">
-          操作中メンバー
+          操作中の冒険者
         </p>
-        <p className="text-lg font-semibold gold-text mt-1 truncate px-2">
+        <p className="pixel-title text-lg font-semibold gold-text mt-1 truncate px-2">
           {selectedPlayer || "—"}
         </p>
       </footer>
@@ -150,9 +155,9 @@ function Bar({
         <span>{label}</span>
         <span>{value}%</span>
       </div>
-      <div className="h-1 rounded-full bg-black/50 overflow-hidden">
+      <div className="h-2 border border-white/20 bg-black/60 overflow-hidden">
         <div
-          className={`h-full rounded-full bg-gradient-to-r ${color} transition-all duration-500`}
+          className={`h-full bg-gradient-to-r ${color} transition-all duration-500`}
           style={{ width: `${value}%` }}
         />
       </div>

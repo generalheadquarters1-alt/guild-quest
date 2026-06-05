@@ -1,5 +1,16 @@
-import { LOG_ACTION_LABELS, type QuestLog } from "../lib/questLogApi";
+import type { QuestLog, QuestLogAction } from "../lib/questLogApi";
 import { formatCompletedDate } from "../lib/questUtils";
+
+const ACTION_SENTENCE: Record<QuestLogAction, string> = {
+  created: "を掲示しました。",
+  accepted: "を受注しました。",
+  succession_requested: "の助っ人を募集しました。",
+  successor_added: "を継承しました。",
+  completed: "を達成しました。",
+  edited: "を書き換えました。",
+  deleted: "を記録から外しました。",
+  reopened: "を再掲しました。",
+};
 
 interface ActivityLogProps {
   logs: QuestLog[];
@@ -11,7 +22,7 @@ export function ActivityLog({ logs, loading }: ActivityLogProps) {
     return (
       <div className="space-y-2">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-10 rounded bg-white/5 animate-pulse" />
+          <div key={i} className="h-10 border-2 border-white/15 bg-white/5 animate-pulse shadow-[2px_2px_0_#000]" />
         ))}
       </div>
     );
@@ -30,24 +41,22 @@ export function ActivityLog({ logs, loading }: ActivityLogProps) {
       {logs.map((log) => (
         <li
           key={log.id}
-          className="text-[11px] sm:text-xs leading-snug px-2 py-2 rounded border border-white/5 bg-black/20"
+          className="text-[11px] sm:text-xs leading-snug px-2 py-2 border-2 border-white/15 bg-black/20 shadow-[2px_2px_0_#000]"
         >
           <span className="text-slate-500 tabular-nums">
             {formatCompletedDate(log.createdAt)}
           </span>
           <span className="text-slate-600 mx-1">·</span>
-          {log.actorName ? (
-            <span className="text-[var(--color-gold-bright)]/90">
-              {log.actorName}
-            </span>
-          ) : (
-            <span className="text-slate-500">ギルド</span>
-          )}{" "}
-          <span className="text-slate-300">
-            {LOG_ACTION_LABELS[log.action] ?? log.action}
+          <span className="text-[var(--color-gold-bright)]/90">
+            {log.actorName || "ギルド"}
           </span>
-          <span className="text-slate-500"> — </span>
-          <span className="text-slate-400">{log.questTitle}</span>
+          <span className="text-slate-400">が </span>
+          <span className="text-slate-100">
+            「{log.questTitle}」
+          </span>
+          <span className="text-slate-300">
+            {ACTION_SENTENCE[log.action] ?? "を記録しました。"}
+          </span>
           {log.details && (
             <p className="text-slate-500 mt-1 pl-0 italic">&ldquo;{log.details}&rdquo;</p>
           )}

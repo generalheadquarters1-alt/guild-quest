@@ -108,17 +108,17 @@ export function QuestFormModal({
     >
       <button
         type="button"
-        className="modal-backdrop absolute inset-0 bg-black/70 backdrop-blur-sm"
+        className="modal-backdrop absolute inset-0 bg-black/80"
         aria-label="閉じる"
         onClick={submitting ? undefined : onClose}
       />
-      <div className="modal-panel relative rpg-frame rounded-t-2xl sm:rounded-xl w-full max-w-lg max-h-[92dvh] overflow-y-auto custom-scroll">
-        <header className="sticky top-0 z-10 px-5 py-4 border-b border-[var(--color-gold)]/20 bg-[var(--color-panel)]/95 backdrop-blur-sm">
+      <div className="modal-panel relative rpg-frame w-full max-w-lg max-h-[92dvh] overflow-y-auto custom-scroll">
+        <header className="sticky top-0 z-10 px-5 py-4 border-b-2 border-[var(--color-gold)]/35 bg-[var(--color-panel)]">
           <h2
             id="quest-form-title"
-            className="text-xl font-bold gold-text"
+            className="pixel-window-title text-xl font-bold"
           >
-            {mode === "create" ? "✦ 新規クエスト" : "✎ クエスト編集"}
+            {mode === "create" ? "依頼を掲示" : "クエスト編集"}
           </h2>
           <p className="text-xs text-slate-400 mt-1">
             {mode === "create"
@@ -197,7 +197,7 @@ export function QuestFormModal({
               disabled={submitting}
             />
           </div>
-          <div className="rounded-lg border border-[var(--color-gold)]/20 bg-black/20 px-3 py-2 text-xs text-slate-400">
+          <div className="border-2 border-[var(--color-gold)]/45 bg-black/30 px-3 py-2 text-xs text-slate-400 shadow-[3px_3px_0_#000]">
             依頼ランク:{" "}
             <span className="text-[var(--color-gold-bright)] font-bold">
               {form.urgency * form.importance}
@@ -234,7 +234,7 @@ export function QuestFormModal({
               type="button"
               onClick={onClose}
               disabled={submitting}
-              className="quest-btn-secondary flex-1 disabled:opacity-45"
+            className="quest-btn-secondary flex-1 disabled:opacity-45"
             >
               キャンセル
             </button>
@@ -244,9 +244,9 @@ export function QuestFormModal({
               className="quest-btn-primary flex-1 disabled:opacity-45"
             >
               {submitting
-                ? "掲示中..."
+              ? "掲示中..."
                 : mode === "create"
-                  ? "掲示する"
+                  ? "依頼を掲示"
                   : "保存する"}
             </button>
           </div>
@@ -267,7 +267,7 @@ function FormField({
 }) {
   return (
     <label className="block">
-      <span className="text-[10px] tracking-wider text-[var(--color-gold-dim)]">
+      <span className="quest-pixel-label text-[10px] tracking-wider text-[var(--color-gold)]">
         {label}
         {required && <span className="text-red-400 ml-0.5">*</span>}
       </span>
@@ -305,10 +305,10 @@ function ScoreField({
             disabled={disabled}
             onClick={() => onChange(score)}
             aria-label={`${label} ${score}`}
-            className={`min-h-11 rounded-md border text-sm transition-all disabled:opacity-45 ${
+            className={`min-h-11 border-2 text-sm transition-all disabled:opacity-45 shadow-[2px_2px_0_#000] ${
               score <= value
-                ? "border-[var(--color-gold)]/60 bg-[var(--color-gold)]/16 text-[var(--color-gold-bright)] shadow-[0_0_12px_rgba(212,168,83,0.16)]"
-                : "border-white/10 bg-black/25 text-slate-600 hover:border-[var(--color-gold)]/35"
+                ? "border-[var(--color-gold-bright)] bg-[var(--color-gold)]/22 text-[var(--color-gold-bright)]"
+                : "border-white/20 bg-black/25 text-slate-600 hover:border-[var(--color-gold)]/70"
             }`}
           >
             ◆

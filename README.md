@@ -36,6 +36,7 @@ cp .env.example .env
 ```env
 VITE_SUPABASE_URL=https://xxxx.supabase.co
 VITE_SUPABASE_ANON_KEY=eyJhbG...
+VITE_GUILD_CODE=店舗で共有する合言葉
 ```
 
 起動します。
@@ -54,8 +55,30 @@ npm run dev
 4. Environment Variablesに以下を設定します。
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`
+   - `VITE_GUILD_CODE`
 5. Build Commandは通常 `npm run build`、Output Directoryは `dist` です。
 6. Deploy後、実URLでクエスト作成・受注・達成・Realtime反映を確認します。
+
+## 初回利用フロー
+
+1. Vercel URLまたはローカルURLを開きます。
+2. 「ギルドへの入場」画面で合言葉を入力します。
+3. 冒険者名を入力します。
+4. 合言葉が正しければ、冒険者名が `staff` テーブルに登録されます。
+5. 同じ名前が既に `staff` にある場合は重複登録せず、その冒険者として入場します。
+6. 次回以降、同じ端末では合言葉と冒険者名の入力なしで自動入場します。
+
+保存に使う `localStorage`:
+
+- `guild_quest_access_granted`
+- `guild_quest_player_name`
+
+設定画面から「冒険者名を変更」または「ギルドから退出」ができます。退出しても `staff` テーブルから冒険者は削除されません。
+
+## ギルドコードについて
+
+ギルドコードは簡易的な入場制限です。URLとギルドコードを知っている人は利用できます。  
+本格的な権限管理や個人認証が必要な運用では、Supabase Authなどの導入を検討してください。
 
 ## staffテーブル編集
 
@@ -136,10 +159,11 @@ npm run dev
 
 ## 現在の制限
 
-- 認証は未実装です。
+- Supabase Authによる本格認証は未実装です。
+- ギルドコードは簡易ゲートであり、本格的な権限管理ではありません。
 - RLSはプロトタイプ用に匿名読み書きを許可しています。
 - ランキングやEXP計算はまだありません。
-- 選択中メンバーはブラウザの `localStorage` に保存されます。
+- 操作中の冒険者と入場状態はブラウザの `localStorage` に保存されます。
 
 ## ビルド
 
