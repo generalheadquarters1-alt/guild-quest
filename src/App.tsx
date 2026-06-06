@@ -791,49 +791,55 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
           selectedMember={selectedMember}
           selectedPlayer={selectedPlayer}
           guildProgress={guildProgress}
-          boardDisabled={boardDisabled}
-          onCreate={() => setModal({ type: "create" })}
         />
 
-        <header className="lg:hidden z-20 m-2 mb-0 px-3 py-2 rpg-frame bg-[var(--color-panel)] shrink-0">
+        <header className="mobile-top-hud lg:hidden z-20 m-2 mb-0 px-2.5 py-1.5 rpg-frame bg-[var(--color-panel)] shrink-0">
           <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0">
-              <h1 className="pixel-title text-lg font-bold gold-text">
-                ギルドクエスト
-              </h1>
-              <p className="text-[10px] text-slate-400 tracking-wider truncate">
-                操作中の冒険者: <span className="text-[var(--color-gold-bright)]">{selectedPlayer || "未選択"}</span>
-              </p>
+            <div className="min-w-0 flex items-center gap-2">
+              <AvatarSprite
+                avatarType={selectedMember?.avatarType}
+                fallback={selectedMember?.avatar ?? "⚔️"}
+                alt={selectedMember?.name ?? selectedPlayer ?? "冒険者"}
+                frame={selectedMember?.avatarFrame ?? "bronze"}
+                size="xs"
+                className="mobile-header-avatar"
+              />
+              <div className="min-w-0">
+                <h1 className="pixel-title text-base font-bold gold-text leading-tight">
+                  ギルドクエスト
+                </h1>
+                <p className="text-[10px] text-slate-400 tracking-wider truncate">
+                  操作中: <span className="text-[var(--color-gold-bright)]">{selectedPlayer || "未選択"}</span>
+                </p>
+              </div>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 shrink-0">
               <button
                 type="button"
                 onClick={() => setGuideOpen(true)}
-                className="quest-btn-ghost text-xs"
+                className="quest-btn-ghost mobile-icon-command px-2 text-xs"
+                aria-label="使い方"
               >
-                使い方
+                ?
               </button>
               <button
                 type="button"
                 onClick={() => setSettingsOpen(true)}
-                className="quest-btn-ghost text-xs px-3"
+                className="quest-btn-ghost mobile-icon-command px-2 text-xs"
+                aria-label="設定"
               >
-                設定
+                ⚙
               </button>
               <button
                 type="button"
                 onClick={() => setModal({ type: "create" })}
                 disabled={boardDisabled}
-                className="quest-btn-primary text-xs px-3 py-2 disabled:opacity-50"
+                className="quest-btn-primary mobile-post-command text-xs px-2.5 py-1.5 disabled:opacity-50"
               >
                 掲示
               </button>
             </div>
           </div>
-          <MobilePlayerHud
-            selectedMember={selectedMember}
-            selectedPlayer={selectedPlayer}
-          />
         </header>
 
         <div className="game-playfield min-h-0 flex-1 overflow-hidden flex flex-col lg:flex-row gap-0 lg:gap-4 p-0 lg:p-3">
@@ -858,28 +864,28 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
               mobilePanel === "party" ? "hidden lg:flex" : "flex"
             }`}
           >
-            <div className="mb-2 shrink-0">
-              <div className="rpg-frame board-hero px-3 py-2 sm:px-4 sm:py-3 overflow-hidden">
-                <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="mb-1.5 shrink-0">
+              <div className="rpg-frame board-hero px-2.5 py-1.5 sm:px-4 sm:py-3 overflow-hidden">
+                <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="font-[family-name:var(--font-display)] text-[10px] tracking-[0.24em] text-[var(--color-gold)]/80">
+                    <p className="hidden sm:block font-[family-name:var(--font-display)] text-[10px] tracking-[0.24em] text-[var(--color-gold)]/80">
                       GUILD BOARD
                     </p>
-                    <h2 className="pixel-window-title text-base sm:text-xl font-bold">
+                    <h2 className="pixel-window-title text-sm sm:text-xl font-bold">
                       {nav === "board"
                         ? "クエスト掲示板"
                         : nav === "my"
                           ? "自分の依頼"
                           : "ギルドの記録"}
                     </h2>
-                    <p className="text-xs text-slate-400 mt-0.5">
+                    <p className="text-[10px] sm:text-xs text-slate-400 mt-0.5 truncate">
                       {nav === "stats"
                         ? "ギルドの戦況 · Realtime同期"
                         : `${quickFilter === "completed" ? sortedCompleted.length : sortedActive.length}件表示 · 操作中の冒険者 ${selectedPlayer || "未選択"}`}
                     </p>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="flex flex-wrap gap-2 text-[10px] sm:text-xs">
+                  <div className="hidden sm:flex flex-wrap items-center gap-2">
+                    <div className="hidden xl:flex flex-wrap gap-2 text-[10px] sm:text-xs">
                       {urgentCount > 0 && (
                         <span className="pixel-chip px-2 py-1 border-red-400/60 text-red-300 bg-red-500/10">
                           緊急 {urgentCount}
@@ -898,29 +904,14 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                     </div>
                     <button
                       type="button"
-                      onClick={() => setGuideOpen(true)}
-                      className="quest-btn-ghost hidden sm:inline-flex"
-                    >
-                      初回ガイド
-                    </button>
-                    <button
-                      type="button"
                       onClick={() => setModal({ type: "create" })}
                       disabled={boardDisabled}
-                      className="quest-btn-primary hidden sm:inline-flex disabled:opacity-50"
+                      className="quest-btn-primary hidden lg:inline-flex min-h-11 px-4 text-sm disabled:opacity-50"
                     >
                       依頼を掲示
                     </button>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setModal({ type: "create" })}
-                  disabled={boardDisabled}
-                  className="quest-btn-primary w-full mt-2 sm:hidden disabled:opacity-50"
-                >
-                  依頼を掲示
-                </button>
               </div>
             </div>
 
@@ -976,7 +967,6 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                 <EmptyState
                   nav={nav}
                   filter={quickFilter}
-                  onNewQuest={() => setModal({ type: "create" })}
                 />
               </div>
             ) : (
@@ -1054,7 +1044,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
           </aside>
         </div>
 
-        <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)]">
+        <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 px-2 pb-[calc(env(safe-area-inset-bottom)+0.35rem)]">
           <div className="rpg-frame grid grid-cols-4 max-w-lg mx-auto bg-[var(--color-panel)]">
             {(
               [
@@ -1070,24 +1060,24 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                   setNav(item.id);
                   setMobilePanel("quests");
                 }}
-                className={`min-h-16 flex flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-semibold transition-colors font-[family-name:var(--font-pixel)] ${
+                className={`min-h-14 flex flex-col items-center justify-center gap-0.5 py-1.5 text-[10px] font-semibold transition-colors font-[family-name:var(--font-pixel)] ${
                   nav === item.id && mobilePanel === "quests"
                     ? "nav-active"
                     : "text-slate-500"
                 }`}
               >
-                <span className="text-lg">{item.icon}</span>
+                <span className="text-base">{item.icon}</span>
                 {item.label}
               </button>
             ))}
             <button
               type="button"
               onClick={() => setMobilePanel("party")}
-              className={`min-h-16 flex flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-semibold border-l border-[var(--color-gold)]/15 transition-colors font-[family-name:var(--font-pixel)] ${
+              className={`min-h-14 flex flex-col items-center justify-center gap-0.5 py-1.5 text-[10px] font-semibold border-l border-[var(--color-gold)]/15 transition-colors font-[family-name:var(--font-pixel)] ${
                 mobilePanel === "party" ? "nav-active" : "text-slate-500"
               }`}
             >
-              <span className="text-lg">👥</span>
+              <span className="text-base">👥</span>
               パーティ
             </button>
           </div>
@@ -1181,8 +1171,6 @@ function GameHud({
   selectedMember,
   selectedPlayer,
   guildProgress,
-  boardDisabled,
-  onCreate,
 }: {
   selectedMember: PartyMember | null;
   selectedPlayer: string;
@@ -1191,17 +1179,15 @@ function GameHud({
     exp: number;
     rankProgress: number;
   };
-  boardDisabled: boolean;
-  onCreate: () => void;
 }) {
   return (
-    <div className="game-hud hidden lg:grid grid-cols-[minmax(18rem,1fr)_minmax(22rem,1.15fr)_minmax(18rem,1fr)_minmax(14rem,0.7fr)] gap-4 px-3 pt-3">
-      <section className="rpg-frame hud-title-panel px-5 py-4 flex items-center gap-4">
+    <div className="game-hud hidden lg:grid grid-cols-[minmax(17rem,0.9fr)_minmax(22rem,1.25fr)_minmax(18rem,1fr)] gap-3 px-3 pt-3">
+      <section className="rpg-frame hud-title-panel px-4 py-3 flex items-center gap-3">
         <div className="guild-crest" aria-hidden>
           ⚔
         </div>
         <div>
-          <h1 className="pixel-title text-3xl font-bold gold-text">
+          <h1 className="pixel-title text-2xl font-bold gold-text">
             ギルドクエスト
           </h1>
           <p className="pixel-title text-xs text-[var(--color-gold-bright)] tracking-widest">
@@ -1215,7 +1201,7 @@ function GameHud({
         selectedPlayer={selectedPlayer}
       />
 
-      <section className="rpg-frame px-5 py-4">
+      <section className="rpg-frame px-4 py-3">
         <div className="flex items-center gap-3">
           <div className="slime-orb" aria-hidden>
             ◆
@@ -1235,15 +1221,6 @@ function GameHud({
           </div>
         </div>
       </section>
-
-      <button
-        type="button"
-        onClick={onCreate}
-        disabled={boardDisabled}
-        className="quest-btn-primary create-quest-command text-lg disabled:opacity-50"
-      >
-        依頼を掲示する
-      </button>
     </div>
   );
 }
@@ -1259,7 +1236,7 @@ function SelectedPlayerPanel({
   const frame = selectedMember?.avatarFrame ?? "bronze";
 
   return (
-    <section className="rpg-frame selected-player-panel px-5 py-3">
+    <section className="rpg-frame selected-player-panel px-4 py-2">
       <p className="pixel-title text-xs text-[var(--color-gold-bright)]">
         操作中の冒険者
       </p>
@@ -1274,10 +1251,10 @@ function SelectedPlayerPanel({
         />
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-3">
-            <p className="pixel-title text-xl text-slate-50 truncate">
+            <p className="pixel-title text-lg text-slate-50 truncate">
               {selectedMember?.name ?? selectedPlayer ?? "未選択"}
             </p>
-            <p className="pixel-title text-lg text-slate-50">
+            <p className="pixel-title text-base text-slate-50">
               Lv.{selectedMember?.level ?? "--"}
             </p>
           </div>
@@ -1294,41 +1271,6 @@ function SelectedPlayerPanel({
         </div>
       </div>
     </section>
-  );
-}
-
-function MobilePlayerHud({
-  selectedMember,
-  selectedPlayer,
-}: {
-  selectedMember: PartyMember | null;
-  selectedPlayer: string;
-}) {
-  const expProgress = selectedMember ? selectedMember.exp % 100 : 0;
-  const frame = selectedMember?.avatarFrame ?? "bronze";
-
-  return (
-    <div className="mobile-player-hud mt-3 flex items-center gap-3 border-t-2 border-[var(--color-gold)]/25 pt-3">
-      <AvatarSprite
-        avatarType={selectedMember?.avatarType}
-        fallback={selectedMember?.avatar ?? "⚔️"}
-        alt={selectedMember?.name ?? selectedPlayer ?? "冒険者"}
-        frame={frame}
-        size="sm"
-        className="hud-avatar hud-avatar-sm"
-      />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center justify-between gap-2">
-          <p className="pixel-title text-sm text-slate-50 truncate">
-            {selectedMember?.name ?? selectedPlayer ?? "未選択"}
-          </p>
-          <p className="pixel-title text-xs text-slate-50">
-            Lv.{selectedMember?.level ?? "--"}
-          </p>
-        </div>
-        <HudMeter label="EXP" value={expProgress} tone="xp" compact />
-      </div>
-    </div>
   );
 }
 
@@ -1691,13 +1633,13 @@ function QuickFilters({
   ];
 
   return (
-    <div className="shrink-0 -mx-3 lg:-mx-0 px-3 lg:px-0 py-1.5 bg-[#17101a] border-y-2 border-[#fff4c4]/35">
-      <div className="flex gap-2 overflow-x-auto custom-scroll pb-1" role="tablist" aria-label="クエスト絞り込み">
+    <div className="quick-filter-bar shrink-0 -mx-3 lg:-mx-0 px-3 lg:px-0 py-1 bg-[#17101a] border-y-2 border-[#fff4c4]/35">
+      <div className="flex gap-1.5 overflow-x-auto custom-scroll" role="tablist" aria-label="クエスト絞り込み">
         <button
           type="button"
           aria-pressed={active == null}
           onClick={() => onChange(null)}
-          className={`pixel-chip min-h-11 shrink-0 px-3 text-xs font-semibold transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-gold-bright)] ${
+          className={`pixel-chip min-h-11 shrink-0 px-2.5 text-[11px] font-semibold transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-gold-bright)] ${
             active == null
               ? "bg-[var(--color-gold-bright)] text-[#17101a]"
               : "bg-black/80 text-slate-300 hover:text-[var(--color-gold-bright)]"
@@ -1713,7 +1655,7 @@ function QuickFilters({
               type="button"
               aria-pressed={selected}
               onClick={() => onChange(selected ? null : filter.id)}
-              className={`pixel-chip min-h-11 shrink-0 px-3 text-xs font-semibold transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-gold-bright)] ${
+              className={`pixel-chip min-h-11 shrink-0 px-2.5 text-[11px] font-semibold transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-gold-bright)] ${
                 selected
                   ? "bg-[var(--color-gold-bright)] text-[#17101a]"
                   : "bg-black/80 text-slate-300 hover:text-[var(--color-gold-bright)]"
@@ -2030,11 +1972,9 @@ function LoadingBoard() {
 function EmptyState({
   nav,
   filter,
-  onNewQuest,
 }: {
   nav: NavId;
   filter?: QuickFilter | null;
-  onNewQuest: () => void;
 }) {
   const title =
     filter === "urgent"
@@ -2070,15 +2010,6 @@ function EmptyState({
       <p className="text-sm text-slate-500 mt-2">
         {message}
       </p>
-      {nav === "board" && (
-        <button
-          type="button"
-          onClick={onNewQuest}
-          className="quest-btn-primary mt-6"
-        >
-          依頼を掲示
-        </button>
-      )}
     </div>
   );
 }

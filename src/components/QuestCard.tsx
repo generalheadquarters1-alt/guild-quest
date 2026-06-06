@@ -49,15 +49,17 @@ function MemberField({
   names,
   staffByName,
   highlight,
+  className = "",
 }: {
   label: string;
   names: string[];
   staffByName: ReadonlyMap<string, PartyMember>;
   highlight?: boolean;
+  className?: string;
 }) {
   const members = names.filter((name) => !isEmptySlot(name));
   return (
-    <div className="min-w-0 border border-white/6 bg-black/18 px-2.5 py-2 shadow-[2px_2px_0_rgba(0,0,0,0.22)]">
+    <div className={`quest-member-field min-w-0 border border-white/6 bg-black/18 px-2.5 py-2 shadow-[2px_2px_0_rgba(0,0,0,0.22)] ${className}`}>
       <span className="quest-pixel-label block text-[10px] tracking-wider text-[var(--color-gold-dim)]/90">
         {label}
       </span>
@@ -187,14 +189,14 @@ export function QuestCard({
             </div>
           </header>
 
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          <div className="quest-gauge-row mt-3 grid gap-2 sm:grid-cols-2">
             <GaugeField label="緊急度" value={quest.urgency} />
             <GaugeField label="重要度" value={quest.importance} />
           </div>
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <QuestStatusBadge status={quest.status} />
-            <span className="text-[11px] text-slate-400">
+            <span className="quest-status-copy text-[11px] text-slate-400">
               {STATUS_COPY[quest.status]}
             </span>
           </div>
@@ -219,11 +221,13 @@ export function QuestCard({
           names={[quest.challenger]}
           staffByName={staffByName}
           highlight
+          className="quest-member-challenger"
         />
         <MemberField
           label="継承者"
           names={[quest.successor1, quest.successor2]}
           staffByName={staffByName}
+          className="quest-member-successors"
         />
         <button
           type="button"
@@ -235,7 +239,7 @@ export function QuestCard({
       </div>
 
       {hasPrimaryAction && (
-        <div className="grid grid-cols-1 sm:flex sm:flex-wrap gap-2 mt-4 pt-3 border-t-2 border-[rgba(74,46,25,0.22)]">
+        <div className="quest-actions grid grid-cols-1 sm:flex sm:flex-wrap gap-2 mt-4 pt-3 border-t-2 border-[rgba(74,46,25,0.22)]">
           {showAccept && (
             <ActionButton
               variant="gold"
