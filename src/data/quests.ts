@@ -37,6 +37,7 @@ export interface PartyMember {
   mp: number;
   status: "ready" | "busy" | "resting";
   avatar: string;
+  avatarType: string;
   level: number;
   exp: number;
   title: string;

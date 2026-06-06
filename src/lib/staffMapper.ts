@@ -1,4 +1,5 @@
 import type { PartyMember } from "../data/quests";
+import { normalizeAvatarType } from "../data/avatars";
 
 export interface StaffRow {
   id: number;
@@ -8,6 +9,7 @@ export interface StaffRow {
   hp: number;
   mp: number;
   status: string;
+  avatar_type?: string | null;
   level?: number | null;
   exp?: number | null;
   title?: string | null;
@@ -47,6 +49,7 @@ export function rowToStaffMember(row: StaffRow): PartyMember {
     hp: row.hp,
     mp: row.mp,
     status: parseStatus(row.status),
+    avatarType: normalizeAvatarType(row.avatar_type),
     level: row.level ?? Math.floor((row.exp ?? 0) / 100) + 1,
     exp: row.exp ?? 0,
     title: row.title ?? "見習い冒険者",

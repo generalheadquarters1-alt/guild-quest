@@ -232,6 +232,56 @@ textarea:focus-visible {
     10px 10px 0 rgba(0, 0, 0, 0.32);
 }
 
+.avatar-choice {
+  position: relative;
+  min-height: 156px;
+  display: grid;
+  place-items: center;
+  gap: 0.4rem;
+  border: 3px solid rgba(255, 244, 196, 0.34);
+  background:
+    linear-gradient(180deg, rgba(255, 240, 168, 0.06), transparent 42%),
+    #070713;
+  color: #fff4c4;
+  box-shadow:
+    0 0 0 3px #050510 inset,
+    4px 4px 0 #000;
+  padding: 0.75rem;
+  text-align: center;
+}
+
+.avatar-choice:hover,
+.avatar-choice.is-selected {
+  border-color: var(--color-gold-bright);
+  background:
+    radial-gradient(circle at 50% 18%, rgba(255, 240, 168, 0.22), transparent 42%),
+    #101827;
+}
+
+.avatar-choice.is-selected {
+  box-shadow:
+    0 0 0 3px #050510 inset,
+    0 0 20px rgba(255, 240, 168, 0.32),
+    4px 4px 0 #000;
+}
+
+.avatar-choice-label,
+.avatar-choice-selected {
+  font-family: var(--font-pixel);
+  font-weight: 700;
+  text-shadow: 2px 2px 0 #000;
+}
+
+.avatar-choice-label {
+  font-size: 0.92rem;
+}
+
+.avatar-choice-selected {
+  min-height: 22px;
+  color: var(--color-gold-bright);
+  font-size: 0.72rem;
+}
+
 .recommended-quest {
   border: 3px solid var(--color-gold-bright);
   background:
@@ -271,29 +321,92 @@ textarea:focus-visible {
     3px 3px 0 #000;
 }
 
+.avatar-sprite {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  overflow: hidden;
+  flex: none;
+  border: 3px solid #a87338;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent),
+    #101827;
+  box-shadow:
+    0 0 0 3px #050510 inset,
+    3px 3px 0 #000;
+  image-rendering: pixelated;
+  vertical-align: middle;
+}
+
+.avatar-sprite img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: 50% 38%;
+  image-rendering: pixelated;
+}
+
+.avatar-sprite > span {
+  font-size: 1.45rem;
+  filter: drop-shadow(2px 2px 0 #000);
+}
+
+.avatar-sprite-xs {
+  width: 28px;
+  height: 28px;
+  border-width: 2px;
+  box-shadow:
+    0 0 0 2px #050510 inset,
+    2px 2px 0 #000;
+}
+
+.avatar-sprite-sm {
+  width: 48px;
+  height: 48px;
+}
+
+.avatar-sprite-md {
+  width: 56px;
+  height: 56px;
+}
+
+.avatar-sprite-lg {
+  width: 72px;
+  height: 72px;
+}
+
+.avatar-sprite-xl {
+  width: min(118px, 35vw);
+  height: 86px;
+}
+
+.avatar-sprite-portrait {
+  width: 92px;
+  height: 76px;
+}
+
+.avatar-sprite.is-selected {
+  border-color: var(--color-gold-bright);
+  box-shadow:
+    0 0 0 3px #050510 inset,
+    0 0 18px rgba(255, 240, 168, 0.42),
+    3px 3px 0 #000;
+}
+
 .selected-player-panel {
   min-height: 104px;
 }
 
 .hud-avatar {
-  width: 54px;
-  height: 54px;
-  display: grid;
-  place-items: center;
+  width: 72px;
+  height: 72px;
   border: 3px solid #a87338;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent),
-    #101827;
-  font-size: 1.55rem;
-  box-shadow:
-    0 0 0 3px #050510 inset,
-    3px 3px 0 #000;
 }
 
 .hud-avatar-sm {
-  width: 42px;
-  height: 42px;
-  font-size: 1.2rem;
+  width: 48px;
+  height: 48px;
 }
 
 .avatar-frame-bronze {
@@ -920,7 +1033,7 @@ textarea:focus-visible {
   bottom: calc(env(safe-area-inset-bottom) + 5.65rem);
   z-index: 85;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   width: min(900px, calc(100vw - 24px));
   min-height: 112px;
@@ -991,18 +1104,9 @@ textarea:focus-visible {
 .rpg-message-avatar {
   position: relative;
   z-index: 1;
-  display: grid;
-  width: 56px;
-  height: 56px;
-  place-items: center;
+  width: 92px;
+  height: 76px;
   border: 3px solid rgba(255, 240, 168, 0.9);
-  background:
-    linear-gradient(135deg, rgba(98, 184, 255, 0.18), transparent 55%),
-    #0a1224;
-  box-shadow:
-    0 0 0 2px #000 inset,
-    3px 3px 0 #000;
-  font-size: 1.85rem;
 }
 
 .rpg-message-avatar span {
@@ -1088,7 +1192,7 @@ textarea:focus-visible {
 @media (max-width: 480px) {
   .rpg-message-window {
     min-height: 96px;
-    grid-template-columns: 44px minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) 58px auto;
     gap: 0.65rem;
     padding: 1rem 0.85rem 0.75rem;
   }
@@ -1099,9 +1203,8 @@ textarea:focus-visible {
   }
 
   .rpg-message-avatar {
-    width: 44px;
-    height: 44px;
-    font-size: 1.4rem;
+    width: 58px;
+    height: 50px;
   }
 
   .rpg-message-text {
@@ -1235,12 +1338,32 @@ textarea:focus-visible {
   box-shadow: 3px 3px 0 #000;
 }
 
+.quest-member-chip {
+  min-width: 0;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 2px solid rgba(74, 46, 25, 0.24);
+  background: rgba(255, 244, 196, 0.22);
+  color: #3a2411;
+  padding: 0.12rem 0.35rem 0.12rem 0.16rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.22);
+}
+
+.quest-member-chip.is-highlighted {
+  border-color: rgba(160, 91, 20, 0.46);
+  background: rgba(255, 240, 168, 0.34);
+}
+
 .pixel-avatar {
   position: relative;
   image-rendering: pixelated;
 }
 
-.pixel-avatar::before {
+.pixel-avatar:not(.avatar-sprite)::before {
   content: "";
   position: absolute;
   inset: 9px 12px auto auto;

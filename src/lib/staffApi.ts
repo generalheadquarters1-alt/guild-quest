@@ -1,5 +1,6 @@
 import { rowToStaffMember, type StaffRow } from "./staffMapper";
 import type { PartyMember } from "../data/quests";
+import { DEFAULT_AVATAR_TYPE, normalizeAvatarType } from "../data/avatars";
 import { requireSupabase } from "./supabase";
 
 export async function fetchStaff(): Promise<PartyMember[]> {
@@ -14,8 +15,12 @@ export async function fetchStaff(): Promise<PartyMember[]> {
 
 const ENTRY_AVATARS = ["🧙", "⚔️", "🛡️", "📜", "✨", "🎵", "🏹", "🔮"];
 
-export async function ensureStaffMember(name: string): Promise<PartyMember> {
+export async function ensureStaffMember(
+  name: string,
+  avatarType: string = DEFAULT_AVATAR_TYPE,
+): Promise<PartyMember> {
   const normalizedName = name.trim();
+  const normalizedAvatarType = normalizeAvatarType(avatarType);
   if (!normalizedName) {
     throw new Error("冒険者名を入力してください");
   }
@@ -28,7 +33,22 @@ export async function ensureStaffMember(name: string): Promise<PartyMember> {
     .maybeSingle();
 
   if (existingError) throw existingError;
-  if (existing) return rowToStaffMember(existing as StaffRow);
+  if (existing) {
+    const existingRow = existing as StaffRow;
+    if (!existingRow.avatar_type) {
+      const { data: updated, error: updateError } = await client
+        .from("staff")
+        .update({ avatar_type: normalizedAvatarType })
+        .eq("id", existingRow.id)
+        .select("*")
+        .single();
+
+      if (updateError) throw updateError;
+      return rowToStaffMember(updated as StaffRow);
+    }
+
+    return rowToStaffMember(existingRow);
+  }
 
   const { data: lastRows, error: sortError } = await client
     .from("staff")
@@ -44,9 +64,14 @@ export async function ensureStaffMember(name: string): Promise<PartyMember> {
     name: normalizedName,
     role: "冒険者",
     avatar: resolveEntryAvatar(normalizedName),
+    avatar_type: normalizedAvatarType,
     hp: 100,
     mp: 50,
     status: "ready",
+    level: 1,
+    exp: 0,
+    title: "見習い冒険者",
+    avatar_frame: "bronze",
     sort_order: lastSort + 1,
   };
 

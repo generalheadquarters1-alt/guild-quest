@@ -1,4 +1,5 @@
 import type { PartyMember } from "../data/quests";
+import { AvatarSprite } from "./AvatarSprite";
 
 const STATUS_LABEL: Record<PartyMember["status"], { text: string; color: string }> =
   {
@@ -76,15 +77,18 @@ export function PartyPanel({
                   }}
                 >
                   <div className="flex items-center gap-3 mb-2">
-                    <div
-                      className={`pixel-avatar w-11 h-11 border-2 flex items-center justify-center text-lg transition-transform ${FRAME_STYLES[member.avatarFrame]} ${
+                    <AvatarSprite
+                      avatarType={member.avatarType}
+                      fallback={member.avatar}
+                      alt={member.name}
+                      frame={member.avatarFrame}
+                      size="md"
+                      className={`pixel-avatar transition-transform ${FRAME_STYLES[member.avatarFrame]} ${
                         isSelected
                           ? "scale-105"
                           : "group-hover:scale-105"
                       }`}
-                    >
-                      {member.avatar}
-                    </div>
+                    />
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-slate-100 truncate">
                         Lv {member.level} {member.name}

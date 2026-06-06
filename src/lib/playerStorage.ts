@@ -1,4 +1,5 @@
 export const GUILD_PLAYER_STORAGE_KEY = "guild_quest_player_name";
+export const GUILD_AVATAR_STORAGE_KEY = "guild_quest_avatar";
 const LEGACY_STORAGE_KEY = "todo-quest-player";
 
 export function loadSelectedPlayer(fallbackName: string): string {
@@ -17,6 +18,30 @@ export function saveSelectedPlayer(name: string): void {
   try {
     localStorage.setItem(GUILD_PLAYER_STORAGE_KEY, name);
     localStorage.setItem(LEGACY_STORAGE_KEY, name);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function loadSelectedAvatar(fallbackAvatar: string): string {
+  try {
+    return localStorage.getItem(GUILD_AVATAR_STORAGE_KEY) ?? fallbackAvatar;
+  } catch {
+    return fallbackAvatar;
+  }
+}
+
+export function saveSelectedAvatar(avatarType: string): void {
+  try {
+    localStorage.setItem(GUILD_AVATAR_STORAGE_KEY, avatarType);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function clearSelectedAvatar(): void {
+  try {
+    localStorage.removeItem(GUILD_AVATAR_STORAGE_KEY);
   } catch {
     /* ignore */
   }

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { Quest } from "../data/quests";
+import type { PartyMember, Quest } from "../data/quests";
 import {
   canAcceptQuest,
   canBecomeSuccessor,
@@ -12,6 +12,7 @@ import {
 import { LevelBadge } from "./LevelBadge";
 import { PriorityBadge } from "./PriorityBadge";
 import { QuestStatusBadge } from "./QuestStatusBadge";
+import { AvatarSprite } from "./AvatarSprite";
 
 const STATUS_RING: Record<Quest["status"], string> = {
   open: "quest-card-open",
@@ -31,6 +32,7 @@ interface QuestCardProps {
   quest: Quest;
   index: number;
   selectedPlayer: string;
+  staffByName: ReadonlyMap<string, PartyMember>;
   onAccept: (questId: number) => void;
   onBecomeSuccessor: (questId: number) => void;
   onRequestSuccession: (questId: number) => void;
@@ -42,32 +44,51 @@ interface QuestCardProps {
   featured?: boolean;
 }
 
-function Field({
+function MemberField({
   label,
-  value,
+  names,
+  staffByName,
   highlight,
 }: {
   label: string;
-  value: string;
+  names: string[];
+  staffByName: ReadonlyMap<string, PartyMember>;
   highlight?: boolean;
 }) {
-  const empty = value === "—";
+  const members = names.filter((name) => !isEmptySlot(name));
   return (
     <div className="min-w-0 border border-white/6 bg-black/18 px-2.5 py-2 shadow-[2px_2px_0_rgba(0,0,0,0.22)]">
       <span className="quest-pixel-label block text-[10px] tracking-wider text-[var(--color-gold-dim)]/90">
         {label}
       </span>
-      <span
-        className={`block text-xs sm:text-sm truncate ${
-          empty
-            ? "text-slate-500 italic"
-            : highlight
-              ? "text-[var(--color-gold-bright)] font-medium"
-              : "text-slate-200"
-        }`}
-      >
-        {value}
-      </span>
+      {members.length === 0 ? (
+        <span className="block text-xs sm:text-sm truncate text-slate-500 italic">
+          —
+        </span>
+      ) : (
+        <span className="mt-1 flex min-w-0 flex-wrap gap-1">
+          {members.map((name) => {
+            const member = staffByName.get(name);
+            return (
+              <span
+                key={name}
+                className={`quest-member-chip ${
+                  highlight ? "is-highlighted" : ""
+                }`}
+              >
+                <AvatarSprite
+                  avatarType={member?.avatarType}
+                  fallback={member?.avatar ?? "⚔️"}
+                  alt={name}
+                  size="xs"
+                  useFallbackWhenMissing={!member}
+                />
+                <span className="truncate">{name}</span>
+              </span>
+            );
+          })}
+        </span>
+      )}
     </div>
   );
 }
@@ -76,6 +97,7 @@ export function QuestCard({
   quest,
   index,
   selectedPlayer,
+  staffByName,
   onAccept,
   onBecomeSuccessor,
   onRequestSuccession,
@@ -191,8 +213,18 @@ export function QuestCard({
         </aside>
       </div>
 
-      <div className="quest-party-row grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
-        <Field label="挑戦者" value={quest.challenger} highlight />
+      <div className="quest-party-row grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)_auto] gap-2 mt-2">
+        <MemberField
+          label="挑戦者"
+          names={[quest.challenger]}
+          staffByName={staffByName}
+          highlight
+        />
+        <MemberField
+          label="継承者"
+          names={[quest.successor1, quest.successor2]}
+          staffByName={staffByName}
+        />
         <button
           type="button"
           onClick={() => onOpenDetail(quest.id)}

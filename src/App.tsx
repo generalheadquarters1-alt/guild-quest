@@ -8,6 +8,7 @@ import {
 import { ActivityLog } from "./components/ActivityLog";
 import { CompletedQuestLog } from "./components/CompletedQuestLog";
 import { ConfirmModal } from "./components/ConfirmModal";
+import { AvatarSprite } from "./components/AvatarSprite";
 import {
   QuestFormModal,
   type QuestFormData,
@@ -16,6 +17,7 @@ import { PartyPanel } from "./components/PartyPanel";
 import { QuestCard } from "./components/QuestCard";
 import { ReopenQuestModal } from "./components/ReopenQuestModal";
 import { Sidebar } from "./components/Sidebar";
+import { AVATAR_OPTIONS, DEFAULT_AVATAR_TYPE } from "./data/avatars";
 import { GUILD_STATS } from "./data/quests";
 import type { CompletedQuestEntry, PartyMember, Quest } from "./data/quests";
 import type { QuestLog } from "./lib/questLogApi";
@@ -24,9 +26,12 @@ import { useQuests } from "./hooks/useQuests";
 import { useStaff } from "./hooks/useStaff";
 import { partitionQuests } from "./lib/questMapper";
 import {
+  clearSelectedAvatar,
   clearSelectedPlayer,
+  loadSelectedAvatar,
   loadSelectedPlayer,
   resolveSelectedPlayer,
+  saveSelectedAvatar,
   saveSelectedPlayer,
 } from "./lib/playerStorage";
 import {
@@ -63,6 +68,7 @@ type DialogueMessage = {
   message: string;
   icon: string;
   tone: DialogueTone;
+  avatarType?: string | null;
   lines?: string[];
   durationMs?: number;
 };
@@ -99,10 +105,11 @@ export default function App() {
     return accessGranted && loadSelectedPlayer("") !== "";
   });
 
-  const handleGuildEntry = async (playerName: string) => {
-    await ensureStaffMember(playerName);
+  const handleGuildEntry = async (playerName: string, avatarType: string) => {
+    const member = await ensureStaffMember(playerName, avatarType);
     localStorage.setItem(GUILD_ACCESS_KEY, "true");
-    saveSelectedPlayer(playerName);
+    saveSelectedPlayer(member.name);
+    saveSelectedAvatar(member.avatarType);
     setHasGuildAccess(true);
   };
 
@@ -110,6 +117,7 @@ export default function App() {
     localStorage.removeItem(GUILD_ACCESS_KEY);
     localStorage.removeItem(LEGACY_GUILD_ACCESS_KEY);
     clearSelectedPlayer();
+    clearSelectedAvatar();
     setHasGuildAccess(false);
   };
 
@@ -129,10 +137,11 @@ function GuildCodeGate({
   onEnter,
 }: {
   guildCode: string;
-  onEnter: (playerName: string) => Promise<void>;
+  onEnter: (playerName: string, avatarType: string) => Promise<void>;
 }) {
   const [inputCode, setInputCode] = useState("");
   const [playerName, setPlayerName] = useState("");
+  const [avatarType, setAvatarType] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -150,10 +159,15 @@ function GuildCodeGate({
       return;
     }
 
+    if (!avatarType) {
+      setError("冒険者を選択してください");
+      return;
+    }
+
     setError(null);
     setSubmitting(true);
     try {
-      await onEnter(trimmedName);
+      await onEnter(trimmedName, avatarType);
     } catch {
       setError("冒険者登録に失敗しました。少し時間を置いて再度お試しください。");
     } finally {
@@ -194,7 +208,7 @@ function GuildCodeGate({
             このギルドの扉を開ける。」
           </p>
           <p className="text-xs text-slate-500 mt-2">
-            合言葉と冒険者名を入力してください
+            合言葉と冒険者名を入力し、冒険者を選択してください
           </p>
         </div>
 
@@ -237,6 +251,46 @@ function GuildCodeGate({
               disabled={submitting}
             />
           </label>
+
+          <fieldset className="space-y-2">
+            <legend className="block text-xs font-bold text-[var(--color-gold)] tracking-widest">
+              冒険者を選択
+            </legend>
+            <div className="grid grid-cols-2 gap-3">
+              {AVATAR_OPTIONS.map((avatar) => {
+                const selected = avatarType === avatar.type;
+                return (
+                  <button
+                    key={avatar.type}
+                    type="button"
+                    onClick={() => {
+                      setAvatarType(avatar.type);
+                      if (error) setError(null);
+                    }}
+                    disabled={submitting}
+                    className={`avatar-choice tap-card ${
+                      selected ? "is-selected" : ""
+                    } disabled:opacity-50`}
+                    aria-pressed={selected}
+                  >
+                    <span className="avatar-choice-label">
+                      {selected ? "▶ " : ""}
+                      {avatar.label}
+                    </span>
+                    <AvatarSprite
+                      avatarType={avatar.type}
+                      alt={avatar.label}
+                      size="xl"
+                      selected={selected}
+                    />
+                    {selected && (
+                      <span className="avatar-choice-selected">選択中</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </fieldset>
 
           {error && (
             <p
@@ -313,6 +367,15 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
 
   const busy = pendingAction != null;
 
+  const selectedMember = useMemo(
+    () => staff.find((member) => member.name === selectedPlayer) ?? null,
+    [staff, selectedPlayer],
+  );
+
+  const staffByName = useMemo(() => {
+    return new Map(staff.map((member) => [member.name, member]));
+  }, [staff]);
+
   useEffect(() => {
     if (staff.length === 0) return;
     setSelectedPlayer((prev) =>
@@ -327,6 +390,12 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
   useEffect(() => {
     if (selectedPlayer) saveSelectedPlayer(selectedPlayer);
   }, [selectedPlayer]);
+
+  useEffect(() => {
+    if (selectedMember?.avatarType) {
+      saveSelectedAvatar(selectedMember.avatarType);
+    }
+  }, [selectedMember]);
 
   useEffect(() => {
     const markOnline = () => setIsOnline(true);
@@ -366,6 +435,8 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
       message,
       icon: "🧙",
       tone: "guild",
+      avatarType:
+        selectedMember?.avatarType ?? loadSelectedAvatar(DEFAULT_AVATAR_TYPE),
       durationMs: 2200,
       ...options,
     });
@@ -406,11 +477,6 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
   );
 
   const myQuestCount = countMyQuests(activeQuests, selectedPlayer);
-
-  const selectedMember = useMemo(
-    () => staff.find((member) => member.name === selectedPlayer) ?? null,
-    [staff, selectedPlayer],
-  );
 
   const baseActive = useMemo(() => {
     return nav === "my"
@@ -613,6 +679,8 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
           message: "クエスト達成！",
           icon: "🎁",
           tone: "reward",
+          avatarType:
+            selectedMember?.avatarType ?? loadSelectedAvatar(DEFAULT_AVATAR_TYPE),
           lines: [`EXP +${exp}`, `GOLD +${coins}`, `ギルドEXP +${guildExp}`],
           durationMs: 3000,
         });
@@ -656,8 +724,12 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
     setActionError(null);
     setPendingAction("rename-player");
     try {
-      const member = await ensureStaffMember(nextName);
+      const member = await ensureStaffMember(
+        nextName,
+        selectedMember?.avatarType ?? loadSelectedAvatar(DEFAULT_AVATAR_TYPE),
+      );
       saveSelectedPlayer(member.name);
+      saveSelectedAvatar(member.avatarType);
       setSelectedPlayer(member.name);
       await reloadStaff();
       addToast("操作中の冒険者を変更しました。");
@@ -919,6 +991,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                     <RecommendedQuest
                       quest={recommendedQuest}
                       selectedPlayer={selectedPlayer}
+                      staffByName={staffByName}
                       busy={busy}
                       onAccept={handleAccept}
                       onBecomeSuccessor={handleBecomeSuccessor}
@@ -940,6 +1013,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                         quest={quest}
                         index={i}
                         selectedPlayer={selectedPlayer}
+                        staffByName={staffByName}
                         onAccept={handleAccept}
                         onBecomeSuccessor={handleBecomeSuccessor}
                         onRequestSuccession={handleRequestSuccession}
@@ -1069,6 +1143,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
 
       <QuestDetailModal
         quest={detailQuest}
+        staffByName={staffByName}
         open={detail.type === "open" && detailQuest != null}
         onClose={() => setDetail({ type: "closed" })}
         onEdit={(id) => {
@@ -1189,9 +1264,14 @@ function SelectedPlayerPanel({
         操作中の冒険者
       </p>
       <div className="mt-2 flex items-center gap-3">
-        <div className={`hud-avatar avatar-frame-${frame}`}>
-          {selectedMember?.avatar ?? "🧙"}
-        </div>
+        <AvatarSprite
+          avatarType={selectedMember?.avatarType}
+          fallback={selectedMember?.avatar ?? "⚔️"}
+          alt={selectedMember?.name ?? selectedPlayer ?? "冒険者"}
+          frame={frame}
+          size="lg"
+          className="hud-avatar"
+        />
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-3">
             <p className="pixel-title text-xl text-slate-50 truncate">
@@ -1229,9 +1309,14 @@ function MobilePlayerHud({
 
   return (
     <div className="mobile-player-hud mt-3 flex items-center gap-3 border-t-2 border-[var(--color-gold)]/25 pt-3">
-      <div className={`hud-avatar hud-avatar-sm avatar-frame-${frame}`}>
-        {selectedMember?.avatar ?? "🧙"}
-      </div>
+      <AvatarSprite
+        avatarType={selectedMember?.avatarType}
+        fallback={selectedMember?.avatar ?? "⚔️"}
+        alt={selectedMember?.name ?? selectedPlayer ?? "冒険者"}
+        frame={frame}
+        size="sm"
+        className="hud-avatar hud-avatar-sm"
+      />
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
           <p className="pixel-title text-sm text-slate-50 truncate">
@@ -1304,6 +1389,7 @@ function AdventureLogPanel({
 
 function QuestDetailModal({
   quest,
+  staffByName,
   open,
   onClose,
   onEdit,
@@ -1311,6 +1397,7 @@ function QuestDetailModal({
   disabled,
 }: {
   quest: Quest | null;
+  staffByName: ReadonlyMap<string, PartyMember>;
   open: boolean;
   onClose: () => void;
   onEdit: (questId: number) => void;
@@ -1374,9 +1461,21 @@ function QuestDetailModal({
           <DetailCell label="Lv" value={quest.level} />
           <DetailCell label="緊急度" value={`◆`.repeat(quest.urgency)} />
           <DetailCell label="重要度" value={`◆`.repeat(quest.importance)} />
-          <DetailCell label="挑戦者" value={quest.challenger} />
-          <DetailCell label="継承者1" value={quest.successor1} />
-          <DetailCell label="継承者2" value={quest.successor2} />
+          <DetailCell
+            label="挑戦者"
+            value={quest.challenger}
+            member={staffByName.get(quest.challenger)}
+          />
+          <DetailCell
+            label="継承者1"
+            value={quest.successor1}
+            member={staffByName.get(quest.successor1)}
+          />
+          <DetailCell
+            label="継承者2"
+            value={quest.successor2}
+            member={staffByName.get(quest.successor2)}
+          />
           <DetailCell label="装飾ランク" value={`${quest.priority} Rank`} />
         </div>
 
@@ -1420,15 +1519,35 @@ function QuestDetailModal({
   );
 }
 
-function DetailCell({ label, value }: { label: string; value: string }) {
+function DetailCell({
+  label,
+  value,
+  member,
+}: {
+  label: string;
+  value: string;
+  member?: PartyMember;
+}) {
   const empty = value === "—";
 
   return (
     <div className="border-2 border-white/15 bg-black/20 p-3 shadow-[2px_2px_0_#000]">
       <p className="text-[10px] text-[var(--color-gold)]">{label}</p>
-      <p className={empty ? "mt-1 text-sm text-slate-500" : "mt-1 text-sm text-slate-100"}>
-        {value}
-      </p>
+      {member ? (
+        <div className="mt-1 flex items-center gap-2">
+          <AvatarSprite
+            avatarType={member.avatarType}
+            fallback={member.avatar}
+            alt={member.name}
+            size="xs"
+          />
+          <p className="min-w-0 truncate text-sm text-slate-100">{value}</p>
+        </div>
+      ) : (
+        <p className={empty ? "mt-1 text-sm text-slate-500" : "mt-1 text-sm text-slate-100"}>
+          {value}
+        </p>
+      )}
     </div>
   );
 }
@@ -1615,6 +1734,7 @@ function QuickFilters({
 function RecommendedQuest({
   quest,
   selectedPlayer,
+  staffByName,
   busy,
   onAccept,
   onBecomeSuccessor,
@@ -1626,6 +1746,7 @@ function RecommendedQuest({
 }: {
   quest: Quest;
   selectedPlayer: string;
+  staffByName: ReadonlyMap<string, PartyMember>;
   busy: boolean;
   onAccept: (questId: number) => void;
   onBecomeSuccessor: (questId: number) => void;
@@ -1664,6 +1785,7 @@ function RecommendedQuest({
         quest={quest}
         index={0}
         selectedPlayer={selectedPlayer}
+        staffByName={staffByName}
         onAccept={onAccept}
         onBecomeSuccessor={onBecomeSuccessor}
         onRequestSuccession={onRequestSuccession}
@@ -1724,9 +1846,6 @@ function RPGMessageWindow({
       onClick={onDismiss}
     >
       <div className="rpg-message-speaker">[{message.speaker}]</div>
-      <div className="rpg-message-avatar" aria-hidden>
-        <span>{message.icon}</span>
-      </div>
       <div className="rpg-message-copy">
         <p className="rpg-message-text">{message.message}</p>
         {message.lines && message.lines.length > 0 && (
@@ -1737,6 +1856,14 @@ function RPGMessageWindow({
           </div>
         )}
       </div>
+      <AvatarSprite
+        avatarType={message.avatarType}
+        fallback={message.icon}
+        alt=""
+        size="portrait"
+        useFallbackWhenMissing
+        className="rpg-message-avatar"
+      />
       <span className="rpg-message-next" aria-hidden>
         ▼
       </span>
