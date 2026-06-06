@@ -9,8 +9,6 @@ import {
   isEmptySlot,
   isPlayerOnQuest,
 } from "../lib/questUtils";
-import { LevelBadge } from "./LevelBadge";
-import { PriorityBadge } from "./PriorityBadge";
 import { QuestStatusBadge } from "./QuestStatusBadge";
 import { AvatarSprite } from "./AvatarSprite";
 
@@ -19,13 +17,6 @@ const STATUS_RING: Record<Quest["status"], string> = {
   in_progress: "quest-card-in-progress",
   succession_needed: "quest-card-succession",
   completed: "quest-card-completed",
-};
-
-const STATUS_COPY: Record<Quest["status"], string> = {
-  open: "まだ誰も挑戦していません",
-  in_progress: "担当者が対応中です",
-  succession_needed: "助っ人を募集しています",
-  completed: "討伐完了しました",
 };
 
 interface QuestCardProps {
@@ -112,7 +103,6 @@ export function QuestCard({
   const showSuccessor = canBecomeSuccessor(quest, selectedPlayer);
   const showRequestSuccession = canRequestSuccession(quest, selectedPlayer);
   const showComplete = canMarkComplete(quest, selectedPlayer);
-  const isOpen = quest.status === "open";
   const needsSuccessor = quest.status === "succession_needed";
   const isMine = isPlayerOnQuest(quest, selectedPlayer);
   const isNew =
@@ -128,6 +118,31 @@ export function QuestCard({
 
   const hasPrimaryAction =
     showAccept || showSuccessor || showRequestSuccession || showComplete;
+  const primaryAction = showComplete
+    ? {
+        label: "討伐完了",
+        variant: "xp" as const,
+        onClick: () => onRequestComplete(quest.id),
+      }
+    : showSuccessor
+      ? {
+          label: "継承する",
+          variant: "mana" as const,
+          onClick: () => onBecomeSuccessor(quest.id),
+        }
+      : showRequestSuccession
+        ? {
+            label: "継承を依頼",
+            variant: "rare" as const,
+            onClick: () => onRequestSuccession(quest.id),
+          }
+        : showAccept
+          ? {
+              label: "挑戦する",
+              variant: "gold" as const,
+              onClick: () => onAccept(quest.id),
+            }
+          : null;
   const priorityScore = getPriorityScore(quest);
   const dangerClass =
     priorityScore >= 20
@@ -137,10 +152,16 @@ export function QuestCard({
         : "";
   const status = getStatusPresentation(quest);
   const questIcon = getQuestIcon(quest);
+  const successorLabel =
+    needsSuccessor
+      ? "助っ人募集中"
+      : successorSlotsFilled > 0
+        ? `助っ人 ${successorSlotsFilled}名`
+        : "助っ人なし";
 
   return (
     <article
-      className={`quest-card quest-card-compact tap-card p-3 transition-all duration-300 animate-fade-up ${STATUS_RING[quest.status]} ${dangerClass} ${
+      className={`quest-card quest-card-compact quest-card-dense tap-card p-3 transition-all duration-300 animate-fade-up ${STATUS_RING[quest.status]} ${dangerClass} ${
         quest.urgency >= 4 ? "quest-card-emergency" : ""
       } ${featured ? "quest-card-featured" : ""}`}
       style={{
@@ -148,157 +169,101 @@ export function QuestCard({
         animationFillMode: "both",
       }}
     >
-      {(isOpen || needsSuccessor || isNew || isMine || almostFullParty) && (
-        <div className="compact-badges flex flex-wrap items-center gap-1.5 mb-2 -mt-1 pl-1">
-          {isNew && <CompactBadge tone="mana">新着</CompactBadge>}
-          {quest.urgency >= 4 && <CompactBadge tone="danger">緊急</CompactBadge>}
-          {isOpen && (
-            <CompactBadge tone="gold">未受注</CompactBadge>
-          )}
-          {needsSuccessor && <CompactBadge tone="rare">助っ人募集</CompactBadge>}
-          {isMine && <CompactBadge tone="xp">自分</CompactBadge>}
-          {almostFullParty && <CompactBadge tone="mana">あと1枠</CompactBadge>}
-        </div>
-      )}
-
-      <div className={`notice-ribbon ${status.ribbonClass}`}>
-        {status.label}
-      </div>
-
-      <div className="quest-notice-layout">
-        <div className="quest-notice-icon compact-icon" aria-hidden>
-          <span>{questIcon}</span>
+      <div className="quest-card-row">
+        <div className="quest-card-left">
+          <div className={`notice-ribbon ${status.ribbonClass}`}>
+            {status.label}
+          </div>
+          <div className="quest-notice-icon compact-icon" aria-hidden>
+            <span>{questIcon}</span>
+          </div>
         </div>
 
-        <div className="quest-notice-main min-w-0">
-          <header className="border-b-2 border-[rgba(74,46,25,0.28)] pb-2">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div className="min-w-0 flex-1">
-                <h3 className="pixel-title text-lg sm:text-xl font-semibold text-slate-50 leading-snug break-words line-clamp-2">
-                  {quest.title}
-                </h3>
-                <p className="quest-pixel-label mt-1 text-[10px] sm:text-xs text-[var(--color-mana)]/90 tracking-wider">
-                  推定時間:{" "}
-                  <span className="text-slate-400">{quest.estimatedTime}</span>
-                </p>
-              </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <PriorityBadge priority={quest.priority} />
-                <LevelBadge level={quest.level} />
-              </div>
-            </div>
-          </header>
-
-          <div className="quest-gauge-row mt-3 grid gap-2 sm:grid-cols-2">
-            <GaugeField label="緊急度" value={quest.urgency} />
-            <GaugeField label="重要度" value={quest.importance} />
+        <div className="quest-card-main min-w-0">
+          <div className="quest-card-title-row">
+            <h3 className="pixel-title quest-card-title text-slate-50">
+              {quest.title}
+            </h3>
+            <QuestStatusBadge status={quest.status} />
           </div>
 
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <QuestStatusBadge status={quest.status} />
-            <span className="quest-status-copy text-[11px] text-slate-400">
-              {STATUS_COPY[quest.status]}
+          <p className="quest-card-meta">
+            推定 {quest.estimatedTime}
+            <span aria-hidden> / </span>
+            <span>{successorLabel}</span>
+            {(isNew || isMine || almostFullParty) && (
+              <>
+                <span aria-hidden> / </span>
+                <span>
+                  {isNew ? "新着" : isMine ? "自分の依頼" : "あと1枠"}
+                </span>
+              </>
+            )}
+          </p>
+
+          <div className="quest-gauge-inline">
+            <InlineGauge label="緊急" value={quest.urgency} />
+            <InlineGauge label="重要" value={quest.importance} />
+          </div>
+
+          <div className="quest-party-row">
+            <MemberField
+              label="挑戦者"
+              names={[quest.challenger]}
+              staffByName={staffByName}
+              highlight
+              className="quest-member-challenger"
+            />
+            <MemberField
+              label="継承者"
+              names={[quest.successor1, quest.successor2]}
+              staffByName={staffByName}
+              className="quest-member-successors"
+            />
+          </div>
+        </div>
+
+        <aside className="quest-card-side">
+          <div className="quest-rank-panel">
+            <p className="quest-pixel-label text-[10px]">依頼ランク</p>
+            <strong>{priorityScore}</strong>
+            <span>
+              ({quest.urgency}×{quest.importance})
             </span>
           </div>
-
-        </div>
-
-        <aside className="quest-rank-panel">
-          <p className="quest-pixel-label text-[10px]">依頼ランク</p>
-          <strong>{priorityScore}</strong>
-          <span>
-            ({quest.urgency}×{quest.importance})
-          </span>
-          <span className={`quest-seal ${status.sealClass}`} aria-hidden>
-            ✦
-          </span>
+          <div className="quest-actions">
+            {primaryAction && (
+              <ActionButton
+                variant={primaryAction.variant}
+                onClick={primaryAction.onClick}
+                disabled={disabled}
+              >
+                {primaryAction.label}
+              </ActionButton>
+            )}
+            {!hasPrimaryAction && (
+              <span className="quest-action-spacer" aria-hidden />
+            )}
+            <ActionButton
+              variant="plain"
+              onClick={() => onOpenDetail(quest.id)}
+            >
+              詳細
+            </ActionButton>
+          </div>
         </aside>
       </div>
-
-      <div className="quest-party-row grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)_auto] gap-2 mt-2">
-        <MemberField
-          label="挑戦者"
-          names={[quest.challenger]}
-          staffByName={staffByName}
-          highlight
-          className="quest-member-challenger"
-        />
-        <MemberField
-          label="継承者"
-          names={[quest.successor1, quest.successor2]}
-          staffByName={staffByName}
-          className="quest-member-successors"
-        />
-        <button
-          type="button"
-          onClick={() => onOpenDetail(quest.id)}
-          className="quest-detail-button min-h-11 border border-white/6 bg-black/18 px-2.5 py-2 text-left text-xs font-bold shadow-[2px_2px_0_rgba(0,0,0,0.22)]"
-        >
-          ▶ 詳細
-        </button>
-      </div>
-
-      {hasPrimaryAction && (
-        <div className="quest-actions grid grid-cols-1 sm:flex sm:flex-wrap gap-2 mt-4 pt-3 border-t-2 border-[rgba(74,46,25,0.22)]">
-          {showAccept && (
-            <ActionButton
-              variant="gold"
-              onClick={() => onAccept(quest.id)}
-              disabled={disabled}
-            >
-              挑戦する
-            </ActionButton>
-          )}
-          {showRequestSuccession && (
-            <ActionButton
-              variant="rare"
-              onClick={() => onRequestSuccession(quest.id)}
-              disabled={disabled}
-            >
-              継承を依頼
-            </ActionButton>
-          )}
-          {showSuccessor && (
-            <ActionButton
-              variant="mana"
-              onClick={() => onBecomeSuccessor(quest.id)}
-              disabled={disabled}
-            >
-              継承する
-            </ActionButton>
-          )}
-          {showComplete && (
-            <ActionButton
-              variant="xp"
-              onClick={() => onRequestComplete(quest.id)}
-              disabled={disabled}
-            >
-              討伐完了
-            </ActionButton>
-          )}
-        </div>
-      )}
-
-      {!hasPrimaryAction && (
-        <button
-          type="button"
-          onClick={() => onOpenDetail(quest.id)}
-          className="quest-detail-button mt-3 min-h-11 w-full border-2 border-stone-700/45 bg-stone-900/10 px-3 text-sm font-bold shadow-[2px_2px_0_#000]"
-        >
-          ▶ 詳細
-        </button>
-      )}
     </article>
   );
 }
 
-function GaugeField({ label, value }: { label: string; value: number }) {
+function InlineGauge({ label, value }: { label: string; value: number }) {
   return (
-    <div className="min-w-0 border border-white/6 bg-black/18 px-2.5 py-2 shadow-[2px_2px_0_rgba(0,0,0,0.22)]">
-      <span className="quest-pixel-label block text-[10px] tracking-wider text-[var(--color-gold-dim)]/90">
+    <span className="inline-flex items-center gap-1">
+      <span className="quest-pixel-label text-[10px] tracking-wider text-[var(--color-gold-dim)]/90">
         {label}
       </span>
-      <span className="mt-1 flex gap-0.5" aria-label={`${label} ${value}`}>
+      <span className="flex gap-0.5" aria-label={`${label} ${value}`}>
         {[1, 2, 3, 4, 5].map((score) => (
           <span
             key={score}
@@ -308,7 +273,7 @@ function GaugeField({ label, value }: { label: string; value: number }) {
           </span>
         ))}
       </span>
-    </div>
+    </span>
   );
 }
 
@@ -325,57 +290,30 @@ function getStatusPresentation(quest: Quest) {
     return {
       label: "達成済み",
       ribbonClass: "notice-ribbon-completed",
-      sealClass: "quest-seal-completed",
     };
   }
   if (quest.urgency >= 4) {
     return {
       label: "緊急!!",
       ribbonClass: "notice-ribbon-danger",
-      sealClass: "quest-seal-danger",
     };
   }
   if (quest.status === "succession_needed") {
     return {
       label: "助っ人募集",
       ribbonClass: "notice-ribbon-rare",
-      sealClass: "quest-seal-rare",
     };
   }
   if (quest.status === "open") {
     return {
       label: "未受注",
       ribbonClass: "notice-ribbon-open",
-      sealClass: "quest-seal-open",
     };
   }
   return {
     label: "挑戦中",
     ribbonClass: "notice-ribbon-progress",
-    sealClass: "quest-seal-progress",
   };
-}
-
-function CompactBadge({
-  children,
-  tone,
-}: {
-  children: ReactNode;
-  tone: "gold" | "mana" | "xp" | "rare" | "danger";
-}) {
-  const styles = {
-    gold: "border-[var(--color-gold)]/45 text-[var(--color-gold-bright)] bg-[var(--color-gold)]/12",
-    mana: "border-[var(--color-mana)]/40 text-[var(--color-mana)] bg-[var(--color-mana)]/10",
-    xp: "border-[var(--color-xp)]/40 text-[var(--color-xp)] bg-[var(--color-xp)]/10",
-    rare: "border-[var(--color-rare)]/45 text-[var(--color-rare)] bg-[var(--color-rare)]/12",
-    danger: "border-red-400/55 text-red-200 bg-red-500/18 shadow-[0_0_14px_rgba(239,68,68,0.2)]",
-  };
-
-  return (
-    <span className={`pixel-chip inline-flex min-h-6 items-center px-2 text-[10px] font-bold uppercase tracking-wider ${styles[tone]}`}>
-      {children}
-    </span>
-  );
 }
 
 function ActionButton({
@@ -386,7 +324,7 @@ function ActionButton({
 }: {
   children: ReactNode;
   onClick: () => void;
-  variant: "gold" | "mana" | "xp" | "rare";
+  variant: "gold" | "mana" | "xp" | "rare" | "plain";
   disabled?: boolean;
 }) {
   const styles = {
@@ -394,6 +332,7 @@ function ActionButton({
     mana: "border-[var(--color-mana)]/50 text-[var(--color-mana)] hover:bg-[var(--color-mana)]/10",
     xp: "border-[var(--color-xp)]/50 text-[var(--color-xp)] hover:bg-[var(--color-xp)]/10",
     rare: "border-[var(--color-rare)]/50 text-[var(--color-rare)] hover:bg-[var(--color-rare)]/10",
+    plain: "border-stone-700/45 text-stone-800 hover:bg-stone-900/10",
   };
 
   return (

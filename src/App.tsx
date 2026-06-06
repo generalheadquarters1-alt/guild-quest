@@ -56,7 +56,7 @@ import {
   sortQuests,
 } from "./lib/questUtils";
 
-type NavId = "board" | "my" | "stats";
+type NavId = "board" | "my" | "activity" | "stats" | "settings";
 type MobilePanel = "quests" | "party";
 type QuickFilter = "open" | "urgent" | "succession" | "mine" | "completed";
 type ToastTone = "success" | "error" | "info";
@@ -176,7 +176,7 @@ function GuildCodeGate({
   };
 
   return (
-    <div className="quest-bg min-h-dvh overflow-hidden relative flex items-center justify-center px-4 py-8">
+    <div className="guild-entry-screen quest-bg h-dvh overflow-y-auto relative flex items-start justify-center px-3 pt-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] sm:items-center sm:px-4 sm:py-8">
       <div className="absolute inset-0 opacity-30 pointer-events-none">
         {[...Array(18)].map((_, i) => (
           <span
@@ -192,27 +192,27 @@ function GuildCodeGate({
         ))}
       </div>
 
-      <section className="guild-gate-card rpg-frame w-full max-w-md px-5 py-6 sm:px-7 sm:py-8 animate-fade-up">
-        <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-16 h-16 border-2 border-[var(--color-gold-bright)] bg-[var(--color-deep)] mb-3 animate-pulse-glow shadow-[3px_3px_0_#000]">
-            <span className="text-3xl">⚔️</span>
+      <section className="guild-gate-card rpg-frame w-full max-w-sm px-4 py-4 sm:max-w-md sm:px-7 sm:py-8 animate-fade-up">
+        <div className="text-center mb-3 sm:mb-6">
+          <div className="inline-flex items-center justify-center w-12 h-12 sm:w-16 sm:h-16 border-2 border-[var(--color-gold-bright)] bg-[var(--color-deep)] mb-2 sm:mb-3 animate-pulse-glow shadow-[3px_3px_0_#000]">
+            <span className="text-2xl sm:text-3xl">⚔️</span>
           </div>
           <p className="font-[family-name:var(--font-display)] text-[10px] tracking-[0.28em] text-[var(--color-gold)]/80">
             GUILD ENTRY
           </p>
-          <h1 className="pixel-title text-3xl font-bold gold-text mt-1">
+          <h1 className="pixel-title text-2xl sm:text-3xl font-bold gold-text mt-1">
             ギルドへの入場
           </h1>
-          <p className="text-sm text-slate-300 mt-3 leading-6">
+          <p className="text-xs sm:text-sm text-slate-300 mt-2 sm:mt-3 leading-5 sm:leading-6">
             「合言葉を知る者だけが、<br className="hidden sm:block" />
             このギルドの扉を開ける。」
           </p>
-          <p className="text-xs text-slate-500 mt-2">
+          <p className="text-[10px] sm:text-xs text-slate-500 mt-1.5 sm:mt-2">
             合言葉と冒険者名を入力し、冒険者を選択してください
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
           <label className="block">
             <span className="block text-xs font-bold text-[var(--color-gold)] tracking-widest mb-2">
               合言葉
@@ -223,7 +223,7 @@ function GuildCodeGate({
                 setInputCode(event.target.value);
                 if (error) setError(null);
               }}
-              className="quest-input text-base"
+              className="quest-input text-base guild-entry-input"
               placeholder="合言葉"
               autoComplete="off"
               autoCapitalize="none"
@@ -244,7 +244,7 @@ function GuildCodeGate({
                 setPlayerName(event.target.value);
                 if (error) setError(null);
               }}
-              className="quest-input text-base"
+              className="quest-input text-base guild-entry-input"
               placeholder="例：リオ"
               autoComplete="name"
               maxLength={24}
@@ -256,7 +256,7 @@ function GuildCodeGate({
             <legend className="block text-xs font-bold text-[var(--color-gold)] tracking-widest">
               冒険者を選択
             </legend>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2 sm:gap-3">
               {AVATAR_OPTIONS.map((avatar) => {
                 const selected = avatarType === avatar.type;
                 return (
@@ -310,7 +310,7 @@ function GuildCodeGate({
           </button>
         </form>
 
-        <p className="mt-5 text-center text-[11px] leading-5 text-slate-500">
+        <p className="mt-3 sm:mt-5 text-center text-[10px] sm:text-[11px] leading-5 text-slate-500">
           本格認証ではなく、ギルドメンバー向けの簡易入口です。
         </p>
       </section>
@@ -854,8 +854,6 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
             }}
             myQuestCount={myQuestCount}
             activeQuestCount={activeQuests.length}
-            onLogout={onLogout}
-            onOpenSettings={() => setSettingsOpen(true)}
             className="hidden lg:flex lg:w-56 xl:w-64 shrink-0 h-full min-h-0"
           />
 
@@ -872,14 +870,32 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                       GUILD BOARD
                     </p>
                     <h2 className="pixel-window-title text-sm sm:text-xl font-bold">
-                      {nav === "board"
+                      {quickFilter === "succession"
+                        ? "助っ人募集"
+                        : quickFilter === "completed"
+                          ? "完了ログ"
+                          : quickFilter === "open"
+                            ? "未受注クエスト"
+                            : quickFilter === "urgent"
+                              ? "緊急クエスト"
+                              : quickFilter === "mine"
+                                ? "自分のクエスト"
+                                : nav === "board"
                         ? "クエスト掲示板"
                         : nav === "my"
                           ? "自分の依頼"
-                          : "ギルドの記録"}
+                          : nav === "activity"
+                            ? "冒険の記録"
+                            : nav === "settings"
+                              ? "設定"
+                              : "ギルドの記録"}
                     </h2>
                     <p className="text-[10px] sm:text-xs text-slate-400 mt-0.5 truncate">
-                      {nav === "stats"
+                      {nav === "activity"
+                        ? "ギルド内の行動記録 · Realtime同期"
+                        : nav === "settings"
+                          ? `操作中の冒険者 ${selectedPlayer || "未選択"}`
+                          : nav === "stats"
                         ? "ギルドの戦況 · Realtime同期"
                         : `${quickFilter === "completed" ? sortedCompleted.length : sortedActive.length}件表示 · 操作中の冒険者 ${selectedPlayer || "未選択"}`}
                     </p>
@@ -917,6 +933,16 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
 
             {loading ? (
               <LoadingBoard />
+            ) : nav === "activity" ? (
+              <ActivityLogScreen logs={logs} loading={logsLoading} />
+            ) : nav === "settings" ? (
+              <SettingsScreen
+                currentName={selectedPlayer}
+                disabled={busy}
+                onRename={handleRenamePlayer}
+                onLogout={onLogout}
+                onOpenGuide={() => setGuideOpen(true)}
+              />
             ) : nav === "stats" ? (
               <GuildOverview
                 activeCount={activeQuests.length}
@@ -1153,6 +1179,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
         disabled={busy}
         onClose={() => setSettingsOpen(false)}
         onRename={handleRenamePlayer}
+        onOpenGuide={() => setGuideOpen(true)}
         onLogout={() => {
           setSettingsOpen(false);
           onLogout();
@@ -1329,6 +1356,155 @@ function AdventureLogPanel({
   );
 }
 
+function ActivityLogScreen({
+  logs,
+  loading,
+}: {
+  logs: QuestLog[];
+  loading: boolean;
+}) {
+  return (
+    <section className="rpg-frame min-h-0 flex-1 overflow-hidden p-3 sm:p-4 flex flex-col">
+      <header className="mb-3 shrink-0 border-b-2 border-[var(--color-gold)]/25 pb-3">
+        <p className="font-[family-name:var(--font-display)] text-[10px] tracking-[0.24em] text-[var(--color-gold)]/80">
+          EVENT LOG
+        </p>
+        <h3 className="pixel-window-title mt-1 text-base font-semibold">
+          冒険の記録
+        </h3>
+        <p className="mt-1 text-xs text-slate-500">
+          受注、継承、達成などギルドで起きた出来事を確認できます。
+        </p>
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto custom-scroll pr-1">
+        <ActivityLog logs={logs} loading={loading} />
+      </div>
+    </section>
+  );
+}
+
+function SettingsScreen({
+  currentName,
+  disabled,
+  onRename,
+  onLogout,
+  onOpenGuide,
+}: {
+  currentName: string;
+  disabled: boolean;
+  onRename: (name: string) => Promise<void>;
+  onLogout: () => void;
+  onOpenGuide: () => void;
+}) {
+  const [name, setName] = useState(currentName);
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    setName(currentName);
+    setError(null);
+    setSubmitting(false);
+  }, [currentName]);
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const nextName = name.trim();
+    if (!nextName) {
+      setError("冒険者名を入力してください");
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    try {
+      await onRename(nextName);
+    } catch {
+      setError("冒険者名の変更に失敗しました");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <section className="rpg-frame min-h-0 flex-1 overflow-y-auto custom-scroll p-3 sm:p-4">
+      <header className="border-b-2 border-[var(--color-gold)]/25 pb-3">
+        <p className="font-[family-name:var(--font-display)] text-[10px] tracking-[0.24em] text-[var(--color-gold)]/80">
+          SYSTEM
+        </p>
+        <h3 className="pixel-window-title mt-1 text-base font-semibold">
+          設定
+        </h3>
+        <p className="mt-1 text-xs text-slate-500">
+          操作中の冒険者: {currentName || "未選択"}
+        </p>
+      </header>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        <form
+          onSubmit={handleSubmit}
+          className="border-2 border-white/15 bg-black/20 p-3 shadow-[3px_3px_0_#000]"
+        >
+          <label className="block">
+            <span className="block text-xs font-bold text-[var(--color-gold)] tracking-widest mb-2">
+              冒険者名を変更
+            </span>
+            <input
+              value={name}
+              onChange={(event) => {
+                setName(event.target.value);
+                if (error) setError(null);
+              }}
+              disabled={disabled || submitting}
+              maxLength={24}
+              className="quest-input"
+              placeholder="例：リオ"
+            />
+          </label>
+          {error && (
+            <p className="mt-3 border-2 border-red-400/55 bg-red-500/10 px-3 py-2 text-sm text-red-200 shadow-[3px_3px_0_#000]">
+              {error}
+            </p>
+          )}
+          <button
+            type="submit"
+            disabled={disabled || submitting}
+            className="quest-btn-primary mt-3 w-full disabled:opacity-50"
+          >
+            名前を変更
+          </button>
+        </form>
+
+        <div className="border-2 border-white/15 bg-black/20 p-3 shadow-[3px_3px_0_#000]">
+          <h4 className="pixel-title text-sm text-[var(--color-gold-bright)]">
+            ギルド操作
+          </h4>
+          <p className="mt-2 text-xs leading-5 text-slate-500">
+            退出しても冒険者は名簿から削除されません。次回は合言葉と冒険者名で再入場できます。
+          </p>
+          <div className="mt-4 grid gap-2">
+            <button
+              type="button"
+              onClick={onOpenGuide}
+              disabled={disabled || submitting}
+              className="quest-btn-ghost w-full disabled:opacity-50"
+            >
+              初回ガイドを見る
+            </button>
+            <button
+              type="button"
+              onClick={onLogout}
+              disabled={disabled || submitting}
+              className="quest-btn-ghost w-full border-red-400/70 text-red-200 disabled:opacity-50"
+            >
+              ギルドから退出
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function QuestDetailModal({
   quest,
   staffByName,
@@ -1500,6 +1676,7 @@ function SettingsModal({
   disabled,
   onClose,
   onRename,
+  onOpenGuide,
   onLogout,
 }: {
   open: boolean;
@@ -1507,6 +1684,7 @@ function SettingsModal({
   disabled: boolean;
   onClose: () => void;
   onRename: (name: string) => Promise<void>;
+  onOpenGuide: () => void;
   onLogout: () => void;
 }) {
   const [name, setName] = useState(currentName);
@@ -1600,9 +1778,17 @@ function SettingsModal({
         <div className="mt-5 border-t-2 border-[var(--color-gold)]/25 pt-4">
           <button
             type="button"
+            onClick={onOpenGuide}
+            disabled={disabled || submitting}
+            className="quest-btn-ghost w-full disabled:opacity-50"
+          >
+            初回ガイドを見る
+          </button>
+          <button
+            type="button"
             onClick={onLogout}
             disabled={disabled || submitting}
-            className="quest-btn-ghost w-full border-red-400/70 text-red-200 disabled:opacity-50"
+            className="quest-btn-ghost mt-2 w-full border-red-400/70 text-red-200 disabled:opacity-50"
           >
             ギルドから退出
           </button>
@@ -1708,16 +1894,16 @@ function RecommendedQuest({
         : "助っ人を募集しています。継承参加で進行を支援できます。";
 
   return (
-    <section className="recommended-quest space-y-2 p-2" aria-label="おすすめクエスト">
-      <div className="flex items-center justify-between gap-3 px-1.5">
-        <div>
+    <section className="recommended-quest space-y-1.5 p-1.5" aria-label="おすすめクエスト">
+      <div className="flex items-center justify-between gap-2 px-1">
+        <div className="min-w-0">
           <p className="font-[family-name:var(--font-display)] text-[10px] tracking-[0.2em] text-[var(--color-gold)]/70">
             NEXT QUEST
           </p>
-          <h3 className="pixel-window-title text-sm font-bold mt-0.5">
+          <h3 className="pixel-window-title text-sm font-bold">
             ギルド特別掲示
           </h3>
-          <p className="text-xs text-slate-500">{reason}</p>
+          <p className="hidden md:block truncate text-[11px] text-slate-500">{reason}</p>
         </div>
         <span className="pixel-chip hidden sm:inline-flex px-2 py-1 text-[10px] text-slate-300">
           空き枠 {openSlots}
