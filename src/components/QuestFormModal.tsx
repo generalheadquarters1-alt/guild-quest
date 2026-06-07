@@ -1,5 +1,6 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import type { Priority, Quest, QuestLevel } from "../data/quests";
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { AvatarSprite } from "./AvatarSprite";
+import type { PartyMember, Priority, Quest, QuestLevel } from "../data/quests";
 
 export interface QuestFormData {
   requester: string;
@@ -16,6 +17,8 @@ interface QuestFormModalProps {
   open: boolean;
   mode: "create" | "edit";
   initial?: Quest | null;
+  staff: PartyMember[];
+  selectedPlayer: string;
   onClose: () => void;
   onSubmit: (data: QuestFormData) => void;
   submitting?: boolean;
@@ -66,23 +69,57 @@ export function QuestFormModal({
   open,
   mode,
   initial,
+  staff,
+  selectedPlayer,
   onClose,
   onSubmit,
   submitting = false,
 }: QuestFormModalProps) {
   const [form, setForm] = useState<QuestFormData>(EMPTY_FORM);
+  const [error, setError] = useState<string | null>(null);
+
+  const activeStaff = useMemo(
+    () => staff.filter((member) => member.isActive !== false),
+    [staff],
+  );
+
+  const defaultRequester = useMemo(() => {
+    return activeStaff.some((member) => member.name === selectedPlayer)
+      ? selectedPlayer
+      : "";
+  }, [activeStaff, selectedPlayer]);
 
   useEffect(() => {
     if (open) {
-      setForm(mode === "edit" && initial ? questToForm(initial) : EMPTY_FORM);
+      setForm(
+        mode === "edit" && initial
+          ? questToForm(initial)
+          : { ...EMPTY_FORM, requester: defaultRequester },
+      );
+      setError(null);
     }
   }, [open, mode, initial]);
+
+  useEffect(() => {
+    if (!open || mode !== "create" || form.requester || !defaultRequester) {
+      return;
+    }
+    setForm((prev) => ({ ...prev, requester: defaultRequester }));
+  }, [open, mode, form.requester, defaultRequester]);
 
   if (!open) return null;
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (submitting || !form.requester.trim() || !form.title.trim()) return;
+    if (submitting) return;
+    if (!form.requester.trim()) {
+      setError("依頼者を選択してください");
+      return;
+    }
+    if (!form.title.trim()) {
+      setError("クエスト名を入力してください");
+      return;
+    }
     onSubmit({
       ...form,
       requester: form.requester.trim(),
@@ -97,7 +134,10 @@ export function QuestFormModal({
   const update = <K extends keyof QuestFormData>(
     key: K,
     value: QuestFormData[K],
-  ) => setForm((prev) => ({ ...prev, [key]: value }));
+  ) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+    if (error) setError(null);
+  };
 
   return (
     <div
@@ -129,16 +169,19 @@ export function QuestFormModal({
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
           <FormField label="依頼者" required>
-            <input
-              type="text"
-              required
-              disabled={submitting}
+            <RequesterSelect
+              members={activeStaff}
               value={form.requester}
-              onChange={(e) => update("requester", e.target.value)}
-              placeholder="例: 店長 · 佐藤"
-              className="quest-input"
+              legacyRequester={mode === "edit" ? initial?.requester : null}
+              onChange={(value) => update("requester", value)}
+              disabled={submitting}
             />
           </FormField>
+          {error && (
+            <p className="border-2 border-red-400/55 bg-red-500/10 px-3 py-2 text-sm text-red-200 shadow-[3px_3px_0_#000]">
+              {error}
+            </p>
+          )}
 
           <FormField label="クエスト名" required>
             <input
@@ -266,13 +309,166 @@ function FormField({
   children: ReactNode;
 }) {
   return (
-    <label className="block">
+    <div className="block">
       <span className="quest-pixel-label text-[10px] tracking-wider text-[var(--color-gold)]">
         {label}
         {required && <span className="text-red-400 ml-0.5">*</span>}
       </span>
       <div className="mt-1.5">{children}</div>
-    </label>
+    </div>
+  );
+}
+
+function RequesterSelect({
+  members,
+  value,
+  legacyRequester,
+  onChange,
+  disabled,
+}: {
+  members: PartyMember[];
+  value: string;
+  legacyRequester?: string | null;
+  onChange: (value: string) => void;
+  disabled: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const selectedMember = members.find((member) => member.name === value) ?? null;
+  const hasLegacy =
+    legacyRequester != null &&
+    legacyRequester.trim() !== "" &&
+    !members.some((member) => member.name === legacyRequester);
+  const selectedIsLegacy = value && !selectedMember;
+
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
+
+  const selectValue = (nextValue: string) => {
+    onChange(nextValue);
+    setOpen(false);
+  };
+
+  return (
+    <div className="requester-select relative">
+      <button
+        type="button"
+        disabled={disabled || (members.length === 0 && !hasLegacy)}
+        onClick={() => setOpen((current) => !current)}
+        className="requester-select-trigger quest-input flex min-h-11 w-full items-center justify-between gap-2 text-left disabled:opacity-50"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          {selectedMember ? (
+            <AvatarSprite
+              avatarType={selectedMember.avatarType}
+              fallback={selectedMember.avatar}
+              alt={selectedMember.name}
+              frame={selectedMember.avatarFrame}
+              size="xs"
+              className="shrink-0"
+            />
+          ) : (
+            <span className="grid h-7 w-7 shrink-0 place-items-center border-2 border-white/20 bg-black/40 text-xs shadow-[2px_2px_0_#000]">
+              ?
+            </span>
+          )}
+          <span className="min-w-0">
+            {selectedMember ? (
+              <>
+                <span className="block truncate text-sm text-slate-100">
+                  {selectedMember.name}
+                </span>
+                <span className="block truncate text-[10px] text-[var(--color-gold)]">
+                  Lv.{selectedMember.level} / {selectedMember.title}
+                </span>
+              </>
+            ) : selectedIsLegacy ? (
+              <>
+                <span className="block truncate text-sm text-slate-100">
+                  登録外: {value}
+                </span>
+                <span className="block truncate text-[10px] text-slate-500">
+                  変更せず保存できます
+                </span>
+              </>
+            ) : members.length === 0 ? (
+              <span className="block truncate text-sm text-slate-500">
+                冒険者パーティに登録されたメンバーがいません
+              </span>
+            ) : (
+              <span className="block truncate text-sm text-slate-500">
+                依頼者を選択
+              </span>
+            )}
+          </span>
+        </span>
+        <span className="shrink-0 text-[var(--color-gold-bright)]">▼</span>
+      </button>
+
+      {open && (
+        <div
+          className="requester-select-menu absolute left-0 right-0 top-[calc(100%+0.35rem)] z-[80] max-h-[38dvh] overflow-y-auto custom-scroll border-2 border-[var(--color-gold-bright)] bg-[var(--color-abyss)] p-1 shadow-[4px_4px_0_#000]"
+          role="listbox"
+        >
+          {hasLegacy && (
+            <button
+              type="button"
+              onClick={() => selectValue(legacyRequester)}
+              className={`requester-select-option w-full min-h-11 px-2 py-2 text-left ${
+                value === legacyRequester ? "is-selected" : ""
+              }`}
+              role="option"
+              aria-selected={value === legacyRequester}
+            >
+              <span className="grid h-7 w-7 shrink-0 place-items-center border-2 border-white/20 bg-black/40 text-xs shadow-[2px_2px_0_#000]">
+                ?
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-sm">
+                  登録外: {legacyRequester}
+                </span>
+                <span className="block truncate text-[10px] text-slate-500">
+                  既存の依頼者
+                </span>
+              </span>
+            </button>
+          )}
+
+          {members.map((member) => (
+            <button
+              key={member.id}
+              type="button"
+              onClick={() => selectValue(member.name)}
+              className={`requester-select-option w-full min-h-11 px-2 py-2 text-left ${
+                value === member.name ? "is-selected" : ""
+              }`}
+              role="option"
+              aria-selected={value === member.name}
+            >
+              <AvatarSprite
+                avatarType={member.avatarType}
+                fallback={member.avatar}
+                alt={member.name}
+                frame={member.avatarFrame}
+                size="xs"
+                className="shrink-0"
+              />
+              <span className="min-w-0">
+                <span className="block truncate text-sm text-slate-100">
+                  {member.name}{" "}
+                  <span className="text-[var(--color-gold)]">Lv.{member.level}</span>
+                </span>
+                <span className="block truncate text-[10px] text-slate-500">
+                  {member.title} / {member.role}
+                </span>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

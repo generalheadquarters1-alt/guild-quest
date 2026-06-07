@@ -42,6 +42,7 @@ export interface PartyMember {
   exp: number;
   title: string;
   avatarFrame: "bronze" | "silver" | "gold" | "platinum";
+  isActive?: boolean;
 }
 
 export const EMPTY_SLOT = "—";

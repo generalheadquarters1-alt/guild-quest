@@ -1234,6 +1234,46 @@ textarea:focus-visible {
   opacity: 0.55;
 }
 
+.requester-select-trigger {
+  padding-block: 0.45rem;
+}
+
+.requester-select-menu {
+  background:
+    linear-gradient(180deg, rgba(255, 240, 168, 0.06), transparent 36%),
+    var(--color-abyss);
+}
+
+.requester-select-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 2px solid transparent;
+  color: #fff4c4;
+  font-family: var(--font-pixel);
+  transition:
+    border-color 0.15s,
+    background-color 0.15s,
+    transform 0.12s;
+}
+
+.requester-select-option:hover,
+.requester-select-option:focus-visible {
+  border-color: rgba(255, 244, 196, 0.55);
+  background: #12182c;
+  outline: none;
+}
+
+.requester-select-option:active {
+  transform: translate(1px, 1px);
+}
+
+.requester-select-option.is-selected {
+  border-color: var(--color-gold-bright);
+  background: rgba(216, 163, 60, 0.16);
+  box-shadow: 2px 2px 0 #000;
+}
+
 .quest-btn-primary {
   display: inline-flex;
   align-items: center;

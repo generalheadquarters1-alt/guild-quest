@@ -1117,6 +1117,8 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
         open={modal.type !== "closed"}
         mode={modal.type === "edit" ? "edit" : "create"}
         initial={editingQuest}
+        staff={staff}
+        selectedPlayer={selectedPlayer}
         onClose={() => setModal({ type: "closed" })}
         onSubmit={modal.type === "edit" ? handleEditQuest : handleCreateQuest}
         submitting={busy}

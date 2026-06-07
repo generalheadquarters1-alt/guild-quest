@@ -14,6 +14,7 @@ export interface StaffRow {
   exp?: number | null;
   title?: string | null;
   avatar_frame?: string | null;
+  is_active?: boolean | null;
   sort_order: number;
   created_at: string;
 }
@@ -54,5 +55,6 @@ export function rowToStaffMember(row: StaffRow): PartyMember {
     exp: row.exp ?? 0,
     title: row.title ?? "見習い冒険者",
     avatarFrame: parseFrame(row.avatar_frame),
+    isActive: row.is_active ?? true,
   };
 }
