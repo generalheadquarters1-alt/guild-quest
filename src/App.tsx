@@ -848,12 +848,15 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
             onNavigate={setNav}
             quickFilter={quickFilter}
             onQuickFilter={(filter) => {
-              setNav("board");
               setQuickFilter(filter);
+              if (filter === "succession") {
+                setNav("board");
+              }
               setMobilePanel("quests");
             }}
             myQuestCount={myQuestCount}
             activeQuestCount={activeQuests.length}
+            onOpenGuide={() => setGuideOpen(true)}
             className="hidden lg:flex lg:w-56 xl:w-64 shrink-0 h-full min-h-0"
           />
 

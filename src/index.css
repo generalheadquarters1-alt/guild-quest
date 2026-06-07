@@ -1618,10 +1618,13 @@ textarea:focus-visible {
 
 .pixel-menu-button {
   position: relative;
+  z-index: 1;
   border: 2px solid transparent;
   border-radius: 2px;
   font-family: var(--font-pixel);
   color: #fff4c4;
+  pointer-events: auto;
+  user-select: none;
 }
 
 .pixel-menu-button:hover {
@@ -1640,6 +1643,7 @@ textarea:focus-visible {
   content: "▶";
   color: var(--color-gold-bright);
   animation: cursor-blink 1s steps(2, end) infinite;
+  pointer-events: none;
 }
 
 .quest-card .gold-text {

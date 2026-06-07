@@ -8,6 +8,7 @@ interface SidebarProps {
   onQuickFilter: (filter: SidebarFilter) => void;
   myQuestCount: number;
   activeQuestCount: number;
+  onOpenGuide: () => void;
   className?: string;
 }
 
@@ -18,6 +19,7 @@ export function Sidebar({
   onQuickFilter,
   myQuestCount,
   activeQuestCount,
+  onOpenGuide,
   className = "",
 }: SidebarProps) {
   const NAV: Array<{
@@ -94,6 +96,14 @@ export function Sidebar({
         onQuickFilter(null);
       },
     },
+    {
+      key: "guide",
+      icon: "?",
+      label: "初回ガイド",
+      sub: "HELP",
+      selected: false,
+      onSelect: onOpenGuide,
+    },
   ];
 
   return (
@@ -113,7 +123,7 @@ export function Sidebar({
             key={item.key}
             type="button"
             onClick={item.onSelect}
-            className={`group pixel-menu-button flex items-center gap-3 w-full px-3 py-3 text-left transition-all duration-200 ${
+            className={`group pixel-menu-button flex min-h-11 w-full cursor-pointer items-center gap-3 px-3 py-3 text-left transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-gold-bright)] ${
               item.selected ? "is-selected" : ""
             }`}
           >
