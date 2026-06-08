@@ -1,9 +1,12 @@
 import type { QuestFormData } from "../components/QuestFormModal";
+import { getExpeditionTicketsForRank } from "../data/expeditions";
 import { EMPTY_SLOT, type Quest } from "../data/quests";
+import { awardExpeditionTickets } from "./expeditionApi";
 import { insertQuestLog } from "./questLogApi";
 import { awardPlayerExp } from "./staffApi";
 import {
   deriveStatusAfterRosterChange,
+  getPriorityScore,
   getQuestBaseExp,
   isEmptySlot,
 } from "./questUtils";
@@ -170,6 +173,11 @@ export async function completeQuest(
     { name: quest.successor1, exp: Math.floor(baseExp * 0.6) },
     { name: quest.successor2, exp: Math.floor(baseExp * 0.6) },
   ].filter((award) => !isEmptySlot(award.name)));
+
+  await awardExpeditionTickets(
+    actorName,
+    getExpeditionTicketsForRank(getPriorityScore(quest)),
+  );
 
   await insertQuestLog({
     questId: updated.id,

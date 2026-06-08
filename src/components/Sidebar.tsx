@@ -1,4 +1,4 @@
-type NavId = "board" | "my" | "activity" | "stats" | "settings";
+type NavId = "board" | "my" | "expedition" | "activity" | "stats" | "settings";
 type SidebarFilter = "succession" | null;
 
 interface SidebarProps {
@@ -61,6 +61,17 @@ export function Sidebar({
       onSelect: () => {
         onNavigate("board");
         onQuickFilter("succession");
+      },
+    },
+    {
+      key: "expedition",
+      icon: "🧭",
+      label: "遠征",
+      sub: "TICKET",
+      selected: active === "expedition",
+      onSelect: () => {
+        onNavigate("expedition");
+        onQuickFilter(null);
       },
     },
     {

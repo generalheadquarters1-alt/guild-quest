@@ -8,7 +8,9 @@ export type QuestLogAction =
   | "completed"
   | "edited"
   | "deleted"
-  | "reopened";
+  | "reopened"
+  | "expedition_started"
+  | "expedition_claimed";
 
 export interface QuestLog {
   id: number;
@@ -80,4 +82,6 @@ export const LOG_ACTION_LABELS: Record<QuestLogAction, string> = {
   edited: "クエスト内容を編集",
   deleted: "クエストを削除",
   reopened: "クエストを再掲",
+  expedition_started: "遠征へ出発",
+  expedition_claimed: "遠征から帰還",
 };

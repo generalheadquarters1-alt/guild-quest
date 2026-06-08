@@ -17,13 +17,30 @@ import { PartyPanel } from "./components/PartyPanel";
 import { QuestCard } from "./components/QuestCard";
 import { ReopenQuestModal } from "./components/ReopenQuestModal";
 import { Sidebar } from "./components/Sidebar";
+import {
+  EXPEDITION_DESTINATIONS,
+  formatRemainingTime,
+  formatRewardItems,
+  getCurrentExpedition,
+  getExpeditionTicketsForRank as getTicketsForRank,
+  isExpeditionReady,
+  type Expedition,
+  type ExpeditionDestination,
+  type PlayerResources,
+} from "./data/expeditions";
 import { AVATAR_OPTIONS, DEFAULT_AVATAR_TYPE } from "./data/avatars";
 import { GUILD_STATS } from "./data/quests";
 import type { CompletedQuestEntry, PartyMember, Quest } from "./data/quests";
+import { useExpeditions } from "./hooks/useExpeditions";
 import type { QuestLog } from "./lib/questLogApi";
 import { useQuestLogs } from "./hooks/useQuestLogs";
 import { useQuests } from "./hooks/useQuests";
 import { useStaff } from "./hooks/useStaff";
+import {
+  claimExpeditionReward,
+  ExpeditionError,
+  startExpedition,
+} from "./lib/expeditionApi";
 import { partitionQuests } from "./lib/questMapper";
 import {
   clearSelectedAvatar,
@@ -50,13 +67,14 @@ import {
   countMyQuests,
   getQuestBaseExp,
   getQuestGuildExp,
+  getPriorityScore,
   isEmptySlot,
   isPlayerOnQuest,
   sortCompletedLog,
   sortQuests,
 } from "./lib/questUtils";
 
-type NavId = "board" | "my" | "activity" | "stats" | "settings";
+type NavId = "board" | "my" | "expedition" | "activity" | "stats" | "settings";
 type MobilePanel = "quests" | "party";
 type QuickFilter = "open" | "urgent" | "succession" | "mine" | "completed";
 type ToastTone = "success" | "error" | "info";
@@ -77,6 +95,7 @@ type CompletionReward = {
   exp: number;
   coins: number;
   guildExp: number;
+  tickets?: number;
 };
 const GUIDE_STORAGE_KEY = "todo-quest-guide-seen";
 const GUILD_ACCESS_KEY = "guild_quest_access_granted";
@@ -343,6 +362,13 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
   const [selectedPlayer, setSelectedPlayer] = useState(() =>
     loadSelectedPlayer(""),
   );
+  const {
+    resources,
+    expeditions,
+    loading: expeditionsLoading,
+    error: expeditionsError,
+    reload: reloadExpeditions,
+  } = useExpeditions(selectedPlayer);
   const [nav, setNav] = useState<NavId>("board");
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>("quests");
   const [modal, setModal] = useState<ModalState>({ type: "closed" });
@@ -357,6 +383,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
   const [messageQueue, setMessageQueue] = useState<DialogueMessage[]>([]);
   const [completionBurst, setCompletionBurst] =
     useState<CompletionReward | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const [guideOpen, setGuideOpen] = useState(() => {
     if (typeof localStorage === "undefined") return false;
     return localStorage.getItem(GUIDE_STORAGE_KEY) !== "true";
@@ -375,6 +402,11 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
   const staffByName = useMemo(() => {
     return new Map(staff.map((member) => [member.name, member]));
   }, [staff]);
+
+  const currentExpedition = useMemo(
+    () => getCurrentExpedition(expeditions),
+    [expeditions],
+  );
 
   useEffect(() => {
     if (staff.length === 0) return;
@@ -406,6 +438,11 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
       window.removeEventListener("online", markOnline);
       window.removeEventListener("offline", markOffline);
     };
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
   }, []);
 
   const closeGuide = () => {
@@ -664,13 +701,14 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
     const exp = getQuestBaseExp(quest);
     const coins = Math.max(10, Math.floor(exp / 2));
     const guildExp = getQuestGuildExp(quest);
+    const tickets = getTicketsForRank(getPriorityScore(quest));
     setConfirm({ type: "closed" });
     void runAction(
       `complete-${quest.id}`,
       () => completeQuest(quest, selectedPlayer),
       null,
       () => {
-        setCompletionBurst({ title: quest.title, exp, coins, guildExp });
+        setCompletionBurst({ title: quest.title, exp, coins, guildExp, tickets });
         enqueueGuildMessage(`『${quest.title}』を達成しました！`, {
           durationMs: 1900,
         });
@@ -681,13 +719,105 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
           tone: "reward",
           avatarType:
             selectedMember?.avatarType ?? loadSelectedAvatar(DEFAULT_AVATAR_TYPE),
-          lines: [`EXP +${exp}`, `GOLD +${coins}`, `ギルドEXP +${guildExp}`],
+          lines: [
+            `EXP +${exp}`,
+            `GOLD +${coins}`,
+            `ギルドEXP +${guildExp}`,
+            `遠征チケット +${tickets}`,
+          ],
           durationMs: 3000,
         });
         window.setTimeout(() => setCompletionBurst(null), 1800);
         void reloadStaff();
+        void reloadExpeditions();
       },
     );
+  };
+
+  const handleStartExpedition = (destination: ExpeditionDestination) => {
+    if (!selectedPlayer || pendingAction) return;
+
+    setActionError(null);
+    setPendingAction(`expedition-start-${destination.key}`);
+    void startExpedition(selectedPlayer, destination)
+      .then((expedition) => {
+        enqueueGuildMessage(
+          `${selectedPlayer} は『${expedition.expeditionName}』へ出発しました！`,
+          { icon: destination.icon, durationMs: 2600 },
+        );
+        void reloadExpeditions();
+      })
+      .catch((e) => {
+        const message =
+          e instanceof ExpeditionError
+            ? e.message
+            : "通信魔法に失敗しました。少し時間を置いて再度お試しください。";
+        setActionError(message);
+        enqueueMessage({
+          speaker: "システム",
+          message,
+          icon: "⚙️",
+          tone: "system",
+          durationMs: 2800,
+        });
+      })
+      .finally(() => setPendingAction(null));
+  };
+
+  const handleClaimExpedition = (expedition: Expedition) => {
+    if (!selectedPlayer || pendingAction) return;
+
+    const previousLevel = selectedMember?.level ?? 1;
+    const nextLevel =
+      Math.floor(((selectedMember?.exp ?? 0) + expedition.rewardExp) / 100) + 1;
+    const itemLines = formatRewardItems(expedition.rewardItems);
+
+    setActionError(null);
+    setPendingAction(`expedition-claim-${expedition.id}`);
+    void claimExpeditionReward(expedition, selectedPlayer)
+      .then(() => {
+        enqueueGuildMessage(`${selectedPlayer} が遠征から帰還しました！`, {
+          durationMs: 1900,
+        });
+        enqueueMessage({
+          speaker: "報酬",
+          message: "遠征から帰還しました！",
+          icon: "🎁",
+          tone: "reward",
+          avatarType:
+            selectedMember?.avatarType ?? loadSelectedAvatar(DEFAULT_AVATAR_TYPE),
+          lines: [
+            `EXP +${expedition.rewardExp}`,
+            `GOLD +${expedition.rewardGold}`,
+            `ギルドEXP +${expedition.rewardGuildExp}`,
+            ...itemLines,
+          ],
+          durationMs: 3400,
+        });
+        if (nextLevel > previousLevel) {
+          enqueueGuildMessage(`${selectedPlayer} は Lv.${nextLevel} に上がりました！`, {
+            durationMs: 2600,
+          });
+        }
+        addToast("報酬を受け取りました。");
+        void reloadStaff();
+        void reloadExpeditions();
+      })
+      .catch((e) => {
+        const message =
+          e instanceof ExpeditionError
+            ? e.message
+            : "通信魔法に失敗しました。少し時間を置いて再度お試しください。";
+        setActionError(message);
+        enqueueMessage({
+          speaker: "システム",
+          message,
+          icon: "⚙️",
+          tone: "system",
+          durationMs: 2800,
+        });
+      })
+      .finally(() => setPendingAction(null));
   };
 
   const executeDelete = () => {
@@ -768,12 +898,12 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
       </div>
 
       <div className="relative z-10 flex h-full min-h-0 flex-col max-w-[1600px] mx-auto">
-        {(!isOnline || error || actionError) && (
+        {(!isOnline || error || actionError || expeditionsError) && (
           <div className="mx-4 mt-3 lg:mx-4 lg:mt-0 px-4 py-2 border-2 border-red-400/55 bg-red-500/10 text-red-200 text-xs sm:text-sm flex flex-wrap items-center justify-between gap-2 shadow-[3px_3px_0_#000]">
             <span>
               {!isOnline
                 ? "通信がオフラインのようです。接続が戻るまで操作を一時停止しています。"
-                : actionError ?? "通信魔法に失敗しました。少し時間を置いて再度お試しください。"}
+                : actionError ?? expeditionsError ?? "通信魔法に失敗しました。少し時間を置いて再度お試しください。"}
             </span>
             {error && (
               <button
@@ -887,6 +1017,8 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                         ? "クエスト掲示板"
                         : nav === "my"
                           ? "自分の依頼"
+                          : nav === "expedition"
+                            ? "遠征"
                           : nav === "activity"
                             ? "冒険の記録"
                             : nav === "settings"
@@ -898,6 +1030,8 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                         ? "ギルド内の行動記録 · Realtime同期"
                         : nav === "settings"
                           ? `操作中の冒険者 ${selectedPlayer || "未選択"}`
+                          : nav === "expedition"
+                            ? `遠征チケット ${resources.expeditionTickets}枚 · GOLD ${resources.gold}`
                           : nav === "stats"
                         ? "ギルドの戦況 · Realtime同期"
                         : `${quickFilter === "completed" ? sortedCompleted.length : sortedActive.length}件表示 · 操作中の冒険者 ${selectedPlayer || "未選択"}`}
@@ -936,6 +1070,17 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
 
             {loading ? (
               <LoadingBoard />
+            ) : nav === "expedition" ? (
+              <ExpeditionPanel
+                resources={resources}
+                expeditions={expeditions}
+                currentExpedition={currentExpedition}
+                loading={expeditionsLoading}
+                now={now}
+                busy={busy || !isOnline}
+                onStart={handleStartExpedition}
+                onClaim={handleClaimExpedition}
+              />
             ) : nav === "activity" ? (
               <ActivityLogScreen logs={logs} loading={logsLoading} />
             ) : nav === "settings" ? (
@@ -993,10 +1138,25 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                   counts={filterCounts}
                   onChange={setQuickFilter}
                 />
-                <EmptyState
-                  nav={nav}
-                  filter={quickFilter}
-                />
+                <div className="quest-list-scroll min-h-0 flex-1 overflow-y-auto custom-scroll pr-1">
+                  {nav === "my" && quickFilter == null && (
+                    <ExpeditionPanel
+                      resources={resources}
+                      expeditions={expeditions}
+                      currentExpedition={currentExpedition}
+                      loading={expeditionsLoading}
+                      now={now}
+                      busy={busy || !isOnline}
+                      onStart={handleStartExpedition}
+                      onClaim={handleClaimExpedition}
+                      compact
+                    />
+                  )}
+                  <EmptyState
+                    nav={nav}
+                    filter={quickFilter}
+                  />
+                </div>
               </div>
             ) : (
               <div className={`flex min-h-0 flex-1 flex-col gap-2 ${busy ? "opacity-80 pointer-events-none" : ""}`}>
@@ -1006,6 +1166,19 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                   onChange={setQuickFilter}
                 />
                 <div className="quest-list-scroll min-h-0 flex-1 overflow-y-auto custom-scroll pr-1">
+                  {nav === "my" && quickFilter == null && (
+                    <ExpeditionPanel
+                      resources={resources}
+                      expeditions={expeditions}
+                      currentExpedition={currentExpedition}
+                      loading={expeditionsLoading}
+                      now={now}
+                      busy={busy || !isOnline}
+                      onStart={handleStartExpedition}
+                      onClaim={handleClaimExpedition}
+                      compact
+                    />
+                  )}
                   {nav === "board" && quickFilter == null && recommendedQuest && (
                     <RecommendedQuest
                       quest={recommendedQuest}
@@ -1087,6 +1260,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                 type="button"
                 onClick={() => {
                   setNav(item.id);
+                  setQuickFilter(null);
                   setMobilePanel("quests");
                 }}
                 className={`min-h-14 flex flex-col items-center justify-center gap-0.5 py-1.5 text-[10px] font-semibold transition-colors font-[family-name:var(--font-pixel)] ${
@@ -2026,6 +2200,10 @@ function GuideModal({
       title: "状態で素早く絞り込み",
       text: "未受注、緊急、助っ人募集、自分の依頼、達成済みを1タップで切り替えられます。",
     },
+    {
+      title: "達成後は遠征へ",
+      text: "討伐完了で遠征チケットを獲得します。PCは左メニュー、スマホは自分タブから遠征に出発できます。",
+    },
   ];
 
   return (
@@ -2106,6 +2284,11 @@ function CompletionBurst({ reward }: { reward: CompletionReward }) {
           <span className="reward-row">
             ギルドEXP +{reward.guildExp}
           </span>
+          {reward.tickets != null && reward.tickets > 0 && (
+            <span className="reward-row">
+              遠征チケット +{reward.tickets}
+            </span>
+          )}
         </div>
         <p className="mt-4 pixel-chip inline-flex px-4 py-1 text-xs text-slate-300">
           OK
@@ -2201,6 +2384,216 @@ function EmptyState({
       <p className="text-sm text-slate-500 mt-2">
         {message}
       </p>
+    </div>
+  );
+}
+
+function ExpeditionPanel({
+  resources,
+  expeditions,
+  currentExpedition,
+  loading,
+  now,
+  busy,
+  compact = false,
+  onStart,
+  onClaim,
+}: {
+  resources: PlayerResources;
+  expeditions: Expedition[];
+  currentExpedition: Expedition | null;
+  loading: boolean;
+  now: number;
+  busy: boolean;
+  compact?: boolean;
+  onStart: (destination: ExpeditionDestination) => void;
+  onClaim: (expedition: Expedition) => void;
+}) {
+  const ready = currentExpedition
+    ? isExpeditionReady(currentExpedition, now)
+    : false;
+  const remainingMs = currentExpedition
+    ? new Date(currentExpedition.endsAt).getTime() - now
+    : 0;
+  const claimedHistory = expeditions.filter((expedition) => expedition.status === "claimed");
+  const itemEntries = Object.entries(resources.items).filter(([, amount]) => amount > 0);
+
+  if (loading) {
+    return (
+      <div className={compact ? "mb-2 space-y-2 lg:hidden" : "min-h-0 flex-1 space-y-3"}>
+        {[1, 2, 3].map((i) => (
+          <div
+            key={i}
+            className="rpg-frame h-24 animate-pulse bg-white/5"
+          />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={
+        compact
+          ? "mb-2 space-y-2 lg:hidden"
+          : "min-h-0 flex-1 overflow-y-auto custom-scroll space-y-3 pb-20 lg:pb-1 pr-1"
+      }
+    >
+      <section className="rpg-frame expedition-status-panel p-3 sm:p-4">
+        <header className="mb-3 flex items-start justify-between gap-3 border-b border-[var(--color-gold)]/20 pb-3">
+          <div className="min-w-0">
+            <p className="font-[family-name:var(--font-display)] text-[10px] tracking-[0.22em] text-[var(--color-gold)]/80">
+              EXPEDITION
+            </p>
+            <h3 className="pixel-window-title mt-1 text-base font-semibold">
+              遠征
+            </h3>
+            <p className="mt-1 text-xs text-slate-500">
+              クエスト達成で得た遠征チケットを使い、時間経過で報酬を受け取れます。
+            </p>
+          </div>
+          <div className="grid shrink-0 grid-cols-2 gap-2 text-center">
+            <div className="pixel-chip px-2 py-1 text-[10px] text-[var(--color-gold-bright)]">
+              <span className="block text-slate-500">チケット</span>
+              <strong className="text-base">{resources.expeditionTickets}</strong>
+            </div>
+            <div className="pixel-chip px-2 py-1 text-[10px] text-[var(--color-gold-bright)]">
+              <span className="block text-slate-500">GOLD</span>
+              <strong className="text-base">{resources.gold}</strong>
+            </div>
+          </div>
+        </header>
+
+        <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(12rem,0.45fr)]">
+          <div className="expedition-current-window border-2 border-white/15 bg-black/25 p-3 shadow-[3px_3px_0_#000]">
+            <p className="quest-pixel-label text-[10px] text-[var(--color-gold)]">
+              現在の遠征状態
+            </p>
+            {currentExpedition ? (
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="pixel-title text-base text-slate-100">
+                    {currentExpedition.expeditionName}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {ready
+                      ? "帰還可能です。報酬を受け取れます。"
+                      : `帰還まで ${formatRemainingTime(remainingMs)}`}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onClaim(currentExpedition)}
+                  disabled={!ready || busy}
+                  className="quest-btn-primary min-h-11 px-3 text-xs disabled:opacity-45"
+                >
+                  {ready ? "報酬を受け取る" : "遠征中"}
+                </button>
+              </div>
+            ) : (
+              <p className="mt-2 text-sm text-slate-400">
+                待機中です。遠征先を選んで出発できます。
+              </p>
+            )}
+          </div>
+
+          <div className="border-2 border-white/15 bg-black/20 p-3 shadow-[3px_3px_0_#000]">
+            <p className="quest-pixel-label text-[10px] text-[var(--color-gold)]">
+              所持アイテム
+            </p>
+            {itemEntries.length > 0 ? (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {itemEntries.map(([name, amount]) => (
+                  <span key={name} className="pixel-chip px-2 py-1 text-[10px] text-slate-300">
+                    {name} x{amount}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-2 text-xs text-slate-500">まだアイテムはありません。</p>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-2 lg:grid-cols-3">
+        {EXPEDITION_DESTINATIONS.map((destination) => {
+          const shortage = resources.expeditionTickets < destination.ticketCost;
+          const disabled = busy || currentExpedition != null || shortage;
+          const rewardLines = [
+            `EXP +${destination.rewardExp}`,
+            `GOLD +${destination.rewardGold}`,
+            `ギルドEXP +${destination.rewardGuildExp}`,
+            destination.rareItem ? `${destination.rareItem.name} 入手の可能性` : "",
+          ].filter(Boolean);
+
+          return (
+            <article
+              key={destination.key}
+              className="rpg-frame expedition-destination-card p-3"
+            >
+              <div className="flex items-start gap-3">
+                <div className="expedition-icon" aria-hidden>
+                  {destination.icon}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h4 className="pixel-title text-base text-slate-100">
+                    {destination.name}
+                  </h4>
+                  <p className="mt-1 text-[11px] leading-5 text-slate-500">
+                    {destination.description}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-[10px]">
+                <span className="pixel-chip px-2 py-1 text-slate-300">
+                  所要 {destination.durationMinutes}分
+                </span>
+                <span className="pixel-chip px-2 py-1 text-[var(--color-gold-bright)]">
+                  チケット {destination.ticketCost}
+                </span>
+              </div>
+              <div className="mt-3 grid gap-1 text-[11px] text-slate-300">
+                {rewardLines.map((line) => (
+                  <span key={line} className="reward-row">
+                    {line}
+                  </span>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => onStart(destination)}
+                disabled={disabled}
+                className="quest-btn-primary mt-3 w-full text-xs disabled:opacity-45"
+              >
+                {currentExpedition
+                  ? "遠征中"
+                  : shortage
+                    ? "チケット不足"
+                    : "出発"}
+              </button>
+            </article>
+          );
+        })}
+      </section>
+
+      {!compact && claimedHistory.length > 0 && (
+        <section className="rpg-frame p-3">
+          <h3 className="pixel-window-title text-sm font-semibold">
+            最近の帰還
+          </h3>
+          <div className="mt-2 grid gap-1.5">
+            {claimedHistory.slice(0, 3).map((expedition) => (
+              <p
+                key={expedition.id}
+                className="border-2 border-white/15 bg-black/20 px-2 py-2 text-xs text-slate-400 shadow-[2px_2px_0_#000]"
+              >
+                {expedition.expeditionName} / EXP +{expedition.rewardExp} / GOLD +{expedition.rewardGold}
+              </p>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

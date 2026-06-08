@@ -10,6 +10,8 @@ const ACTION_SENTENCE: Record<QuestLogAction, string> = {
   edited: "を書き換えました。",
   deleted: "を記録から外しました。",
   reopened: "を再掲しました。",
+  expedition_started: "へ出発しました。",
+  expedition_claimed: "から帰還しました。",
 };
 
 interface ActivityLogProps {
