@@ -23,6 +23,7 @@ export interface QuestRow {
   status: string;
   created_at: string;
   completed_at: string | null;
+  linked_event_id?: number | null;
 }
 
 const STATUSES: QuestStatus[] = [
@@ -66,6 +67,7 @@ export function rowToQuest(row: QuestRow): Quest {
     status: parseStatus(row.status),
     createdAt: row.created_at,
     completedAt: row.completed_at,
+    linkedEventId: row.linked_event_id ?? null,
   };
 }
 
@@ -86,6 +88,7 @@ export function questToRow(quest: Quest): Omit<QuestRow, "id"> {
     status: quest.status,
     created_at: quest.createdAt ?? new Date().toISOString(),
     completed_at: quest.completedAt ?? null,
+    linked_event_id: quest.linkedEventId ?? null,
   };
 }
 

@@ -1,4 +1,10 @@
 import type { ReactNode } from "react";
+import {
+  daysUntil,
+  formatCalendarDate,
+  isPastDeadline,
+  type CalendarEvent,
+} from "../data/calendar";
 import type { PartyMember, Quest } from "../data/quests";
 import {
   canAcceptQuest,
@@ -31,6 +37,7 @@ interface QuestCardProps {
   onEdit: (questId: number) => void;
   onRequestDelete: (questId: number) => void;
   onOpenDetail: (questId: number) => void;
+  relatedEvent?: CalendarEvent | null;
   disabled?: boolean;
   featured?: boolean;
 }
@@ -96,6 +103,7 @@ export function QuestCard({
   onRequestSuccession,
   onRequestComplete,
   onOpenDetail,
+  relatedEvent,
   disabled = false,
   featured = false,
 }: QuestCardProps) {
@@ -158,6 +166,11 @@ export function QuestCard({
       : successorSlotsFilled > 0
         ? `助っ人 ${successorSlotsFilled}名`
         : "助っ人なし";
+  const deadlinePast = relatedEvent ? isPastDeadline(relatedEvent) : false;
+  const deadlineSoon =
+    relatedEvent?.eventType === "deadline" &&
+    !deadlinePast &&
+    daysUntil(relatedEvent.eventDate) <= 3;
 
   return (
     <article
@@ -200,6 +213,19 @@ export function QuestCard({
               </>
             )}
           </p>
+
+          {relatedEvent && (
+            <div className="mt-1 flex flex-wrap gap-1">
+              <span className="calendar-tag text-[10px]">📅 関連予定あり</span>
+              {relatedEvent.eventType === "deadline" && (
+                <span className={`calendar-tag text-[10px] ${deadlinePast || deadlineSoon ? "is-danger" : ""}`}>
+                  {deadlinePast
+                    ? "期限超過"
+                    : `期限 ${formatCalendarDate(relatedEvent.eventDate)}`}
+                </span>
+              )}
+            </div>
+          )}
 
           <div className="quest-gauge-inline">
             <InlineGauge label="緊急" value={quest.urgency} />

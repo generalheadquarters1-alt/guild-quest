@@ -42,6 +42,7 @@ export async function insertQuest(
     successor2: null,
     status: "open" as const,
     completed_at: null,
+    linked_event_id: form.linkedEventId,
   };
 
   const { data, error } = await requireSupabase()
@@ -227,6 +228,7 @@ export async function editQuestFields(
     importance: form.importance,
     estimatedTime: form.estimatedTime,
     description: form.description,
+    linkedEventId: form.linkedEventId,
   });
 
   await insertQuestLog({

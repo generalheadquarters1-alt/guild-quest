@@ -22,6 +22,7 @@ export interface Quest {
   status: QuestStatus;
   createdAt?: string;
   completedAt?: string | null;
+  linkedEventId?: number | null;
 }
 
 export interface CompletedQuestEntry {

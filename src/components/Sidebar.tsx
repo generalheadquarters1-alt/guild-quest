@@ -1,4 +1,11 @@
-type NavId = "board" | "my" | "expedition" | "activity" | "stats" | "settings";
+type NavId =
+  | "board"
+  | "my"
+  | "calendar"
+  | "expedition"
+  | "activity"
+  | "stats"
+  | "settings";
 type SidebarFilter = "succession" | null;
 
 interface SidebarProps {
@@ -71,6 +78,17 @@ export function Sidebar({
       selected: active === "expedition",
       onSelect: () => {
         onNavigate("expedition");
+        onQuickFilter(null);
+      },
+    },
+    {
+      key: "calendar",
+      icon: "📅",
+      label: "ギルド暦",
+      sub: "CALENDAR",
+      selected: active === "calendar",
+      onSelect: () => {
+        onNavigate("calendar");
         onQuickFilter(null);
       },
     },

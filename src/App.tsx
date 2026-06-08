@@ -28,10 +28,31 @@ import {
   type ExpeditionDestination,
   type PlayerResources,
 } from "./data/expeditions";
+import {
+  EMPTY_EVENT_FORM,
+  EVENT_TYPE_LABELS,
+  EVENT_TYPE_TONES,
+  IMPORTANCE_LABELS,
+  daysUntil,
+  eventToForm,
+  formatCalendarDate,
+  formatCalendarMonth,
+  formatEventTime,
+  getMonthGrid,
+  getWeekRange,
+  isDateWithinRange,
+  isPastDeadline,
+  parseDateInput,
+  toDateInputValue,
+  type CalendarEvent,
+  type CalendarEventFormData,
+  type CalendarEventType,
+} from "./data/calendar";
 import { AVATAR_OPTIONS, DEFAULT_AVATAR_TYPE } from "./data/avatars";
 import { GUILD_STATS } from "./data/quests";
 import type { CompletedQuestEntry, PartyMember, Quest } from "./data/quests";
 import { useExpeditions } from "./hooks/useExpeditions";
+import { useCalendarEvents } from "./hooks/useCalendarEvents";
 import type { QuestLog } from "./lib/questLogApi";
 import { useQuestLogs } from "./hooks/useQuestLogs";
 import { useQuests } from "./hooks/useQuests";
@@ -41,6 +62,11 @@ import {
   ExpeditionError,
   startExpedition,
 } from "./lib/expeditionApi";
+import {
+  createCalendarEvent,
+  deleteCalendarEvent,
+  updateCalendarEvent,
+} from "./lib/calendarApi";
 import { partitionQuests } from "./lib/questMapper";
 import {
   clearSelectedAvatar,
@@ -74,7 +100,14 @@ import {
   sortQuests,
 } from "./lib/questUtils";
 
-type NavId = "board" | "my" | "expedition" | "activity" | "stats" | "settings";
+type NavId =
+  | "board"
+  | "my"
+  | "calendar"
+  | "expedition"
+  | "activity"
+  | "stats"
+  | "settings";
 type MobilePanel = "quests" | "party";
 type QuickFilter = "open" | "urgent" | "succession" | "mine" | "completed";
 type ToastTone = "success" | "error" | "info";
@@ -114,6 +147,13 @@ type ConfirmState =
 
 type ReopenState = { type: "closed" } | { type: "open"; questId: number };
 type DetailState = { type: "closed" } | { type: "open"; questId: number };
+type CalendarFormState =
+  | { type: "closed" }
+  | { type: "create"; date?: string }
+  | { type: "edit"; eventId: number };
+type CalendarDetailState =
+  | { type: "closed" }
+  | { type: "open"; eventId: number };
 
 export default function App() {
   const [hasGuildAccess, setHasGuildAccess] = useState(() => {
@@ -358,6 +398,12 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
   const { quests, loading, error, reload, findQuest } = useQuests();
   const { staff, loading: staffLoading, reload: reloadStaff } = useStaff();
   const { logs, loading: logsLoading } = useQuestLogs();
+  const {
+    events: calendarEvents,
+    loading: calendarLoading,
+    error: calendarError,
+    reload: reloadCalendar,
+  } = useCalendarEvents();
 
   const [selectedPlayer, setSelectedPlayer] = useState(() =>
     loadSelectedPlayer(""),
@@ -375,6 +421,16 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
   const [confirm, setConfirm] = useState<ConfirmState>({ type: "closed" });
   const [reopen, setReopen] = useState<ReopenState>({ type: "closed" });
   const [detail, setDetail] = useState<DetailState>({ type: "closed" });
+  const [calendarForm, setCalendarForm] = useState<CalendarFormState>({
+    type: "closed",
+  });
+  const [calendarDetail, setCalendarDetail] = useState<CalendarDetailState>({
+    type: "closed",
+  });
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date());
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState(() =>
+    toDateInputValue(new Date()),
+  );
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [quickFilter, setQuickFilter] = useState<QuickFilter | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -596,6 +652,20 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
 
   const detailQuest =
     detail.type === "open" ? findQuest(detail.questId) ?? null : null;
+
+  const calendarEventById = useMemo(() => {
+    return new Map(calendarEvents.map((event) => [event.id, event]));
+  }, [calendarEvents]);
+
+  const editingCalendarEvent =
+    calendarForm.type === "edit"
+      ? calendarEventById.get(calendarForm.eventId) ?? null
+      : null;
+
+  const detailCalendarEvent =
+    calendarDetail.type === "open"
+      ? calendarEventById.get(calendarDetail.eventId) ?? null
+      : null;
 
   const runAction = async <T,>(
     key: string,
@@ -820,6 +890,55 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
       .finally(() => setPendingAction(null));
   };
 
+  const handleSubmitCalendarEvent = (data: CalendarEventFormData) => {
+    if (!selectedPlayer) return;
+    const isEdit = calendarForm.type === "edit";
+    const eventId = isEdit ? calendarForm.eventId : null;
+
+    void runAction(
+      isEdit ? `calendar-edit-${eventId}` : "calendar-create",
+      () =>
+        isEdit && eventId != null
+          ? updateCalendarEvent(eventId, data, selectedPlayer)
+          : createCalendarEvent(data, selectedPlayer),
+      null,
+      (saved) => {
+        setCalendarForm({ type: "closed" });
+        setSelectedCalendarDate(saved.eventDate);
+        setCalendarMonth(parseDateInput(saved.eventDate));
+        enqueueGuildMessage(
+          isEdit
+            ? "予定を更新しました。"
+            : "新しい予定がギルド暦に記されました。",
+        );
+        if (saved.linkedQuestId != null) {
+          enqueueGuildMessage("依頼と予定を関連付けました。", {
+            durationMs: 2200,
+          });
+        }
+        void reloadCalendar();
+        void reload();
+      },
+    );
+  };
+
+  const handleDeleteCalendarEvent = (event: CalendarEvent) => {
+    if (!selectedPlayer) return;
+
+    void runAction(
+      `calendar-delete-${event.id}`,
+      () => deleteCalendarEvent(event, selectedPlayer),
+      null,
+      () => {
+        setCalendarDetail({ type: "closed" });
+        setCalendarForm({ type: "closed" });
+        enqueueGuildMessage("予定を削除しました。");
+        void reloadCalendar();
+        void reload();
+      },
+    );
+  };
+
   const executeDelete = () => {
     if (confirm.type !== "delete" || !confirmQuest || !selectedPlayer) return;
     const quest = confirmQuest;
@@ -898,12 +1017,12 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
       </div>
 
       <div className="relative z-10 flex h-full min-h-0 flex-col max-w-[1600px] mx-auto">
-        {(!isOnline || error || actionError || expeditionsError) && (
+        {(!isOnline || error || actionError || expeditionsError || calendarError) && (
           <div className="mx-4 mt-3 lg:mx-4 lg:mt-0 px-4 py-2 border-2 border-red-400/55 bg-red-500/10 text-red-200 text-xs sm:text-sm flex flex-wrap items-center justify-between gap-2 shadow-[3px_3px_0_#000]">
             <span>
               {!isOnline
                 ? "通信がオフラインのようです。接続が戻るまで操作を一時停止しています。"
-                : actionError ?? expeditionsError ?? "通信魔法に失敗しました。少し時間を置いて再度お試しください。"}
+                : actionError ?? expeditionsError ?? calendarError ?? "通信魔法に失敗しました。少し時間を置いて再度お試しください。"}
             </span>
             {error && (
               <button
@@ -1017,6 +1136,8 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                         ? "クエスト掲示板"
                         : nav === "my"
                           ? "自分の依頼"
+                          : nav === "calendar"
+                            ? "ギルド暦"
                           : nav === "expedition"
                             ? "遠征"
                           : nav === "activity"
@@ -1030,6 +1151,8 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                         ? "ギルド内の行動記録 · Realtime同期"
                         : nav === "settings"
                           ? `操作中の冒険者 ${selectedPlayer || "未選択"}`
+                          : nav === "calendar"
+                            ? `${formatCalendarMonth(calendarMonth)} · ${calendarEvents.length}件`
                           : nav === "expedition"
                             ? `遠征チケット ${resources.expeditionTickets}枚 · GOLD ${resources.gold}`
                           : nav === "stats"
@@ -1070,6 +1193,23 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
 
             {loading ? (
               <LoadingBoard />
+            ) : nav === "calendar" ? (
+              <CalendarPanel
+                events={calendarEvents}
+                quests={quests}
+                staff={staff}
+                loading={calendarLoading}
+                monthDate={calendarMonth}
+                selectedDate={selectedCalendarDate}
+                onMonthChange={setCalendarMonth}
+                onSelectedDateChange={setSelectedCalendarDate}
+                onCreate={(date) => setCalendarForm({ type: "create", date })}
+                onEdit={(eventId) => setCalendarForm({ type: "edit", eventId })}
+                onOpenDetail={(eventId) =>
+                  setCalendarDetail({ type: "open", eventId })
+                }
+                busy={busy}
+              />
             ) : nav === "expedition" ? (
               <ExpeditionPanel
                 resources={resources}
@@ -1184,6 +1324,11 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                       quest={recommendedQuest}
                       selectedPlayer={selectedPlayer}
                       staffByName={staffByName}
+                      relatedEvent={
+                        recommendedQuest.linkedEventId
+                          ? calendarEventById.get(recommendedQuest.linkedEventId) ?? null
+                          : null
+                      }
                       busy={busy}
                       onAccept={handleAccept}
                       onBecomeSuccessor={handleBecomeSuccessor}
@@ -1206,6 +1351,11 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                         index={i}
                         selectedPlayer={selectedPlayer}
                         staffByName={staffByName}
+                        relatedEvent={
+                          quest.linkedEventId
+                            ? calendarEventById.get(quest.linkedEventId) ?? null
+                            : null
+                        }
                         onAccept={handleAccept}
                         onBecomeSuccessor={handleBecomeSuccessor}
                         onRequestSuccession={handleRequestSuccession}
@@ -1247,11 +1397,12 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
         </div>
 
         <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 px-2 pb-[calc(env(safe-area-inset-bottom)+0.35rem)]">
-          <div className="rpg-frame grid grid-cols-4 max-w-lg mx-auto bg-[var(--color-panel)]">
+          <div className="rpg-frame grid grid-cols-5 max-w-lg mx-auto bg-[var(--color-panel)]">
             {(
               [
                 { id: "board" as NavId, icon: "📜", label: "クエスト" },
                 { id: "my" as NavId, icon: "⚔️", label: "自分" },
+                { id: "calendar" as NavId, icon: "📅", label: "暦" },
                 { id: "stats" as NavId, icon: "🏰", label: "ギルド" },
               ] as const
             ).map((item) => (
@@ -1293,9 +1444,39 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
         initial={editingQuest}
         staff={staff}
         selectedPlayer={selectedPlayer}
+        calendarEvents={calendarEvents}
         onClose={() => setModal({ type: "closed" })}
         onSubmit={modal.type === "edit" ? handleEditQuest : handleCreateQuest}
         submitting={busy}
+      />
+
+      <CalendarEventFormModal
+        open={calendarForm.type !== "closed"}
+        mode={calendarForm.type === "edit" ? "edit" : "create"}
+        initial={editingCalendarEvent}
+        initialDate={
+          calendarForm.type === "create"
+            ? calendarForm.date ?? selectedCalendarDate
+            : editingCalendarEvent?.eventDate ?? selectedCalendarDate
+        }
+        staff={staff}
+        quests={quests}
+        submitting={busy}
+        onClose={() => setCalendarForm({ type: "closed" })}
+        onSubmit={handleSubmitCalendarEvent}
+      />
+
+      <CalendarEventDetailModal
+        event={detailCalendarEvent}
+        relatedQuests={
+          detailCalendarEvent
+            ? getRelatedQuestsForEvent(detailCalendarEvent, quests)
+            : []
+        }
+        disabled={busy}
+        onClose={() => setCalendarDetail({ type: "closed" })}
+        onEdit={(eventId) => setCalendarForm({ type: "edit", eventId })}
+        onDelete={handleDeleteCalendarEvent}
       />
 
       <ConfirmModal
@@ -1339,8 +1520,17 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
       <QuestDetailModal
         quest={detailQuest}
         staffByName={staffByName}
+        relatedEvent={
+          detailQuest?.linkedEventId
+            ? calendarEventById.get(detailQuest.linkedEventId) ?? null
+            : null
+        }
         open={detail.type === "open" && detailQuest != null}
         onClose={() => setDetail({ type: "closed" })}
+        onOpenEvent={(eventId) => {
+          setDetail({ type: "closed" });
+          setCalendarDetail({ type: "open", eventId });
+        }}
         onEdit={(id) => {
           setDetail({ type: "closed" });
           setModal({ type: "edit", questId: id });
@@ -1687,16 +1877,20 @@ function SettingsScreen({
 function QuestDetailModal({
   quest,
   staffByName,
+  relatedEvent,
   open,
   onClose,
+  onOpenEvent,
   onEdit,
   onDelete,
   disabled,
 }: {
   quest: Quest | null;
   staffByName: ReadonlyMap<string, PartyMember>;
+  relatedEvent: CalendarEvent | null;
   open: boolean;
   onClose: () => void;
+  onOpenEvent: (eventId: number) => void;
   onEdit: (questId: number) => void;
   onDelete: (questId: number) => void;
   disabled: boolean;
@@ -1785,6 +1979,32 @@ function QuestDetailModal({
           </p>
         </section>
 
+        {relatedEvent && (
+          <section className="mt-4 border-2 border-[var(--color-gold)]/35 bg-black/20 p-3 shadow-[3px_3px_0_#000]">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="pixel-title text-sm text-[var(--color-gold-bright)]">
+                  関連予定
+                </h3>
+                <p className="mt-2 text-sm text-slate-300">
+                  {relatedEvent.title}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {formatCalendarDate(relatedEvent.eventDate)} / {formatEventTime(relatedEvent)} / {EVENT_TYPE_LABELS[relatedEvent.eventType]} / 重要度{relatedEvent.importance}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onOpenEvent(relatedEvent.id)}
+                disabled={disabled}
+                className="quest-btn-ghost min-h-11 px-3 text-xs disabled:opacity-45"
+              >
+                予定詳細
+              </button>
+            </div>
+          </section>
+        )}
+
         <footer className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-3">
           <button
             type="button"
@@ -1845,6 +2065,359 @@ function DetailCell({
           {value}
         </p>
       )}
+    </div>
+  );
+}
+
+function CalendarEventFormModal({
+  open,
+  mode,
+  initial,
+  initialDate,
+  staff,
+  quests,
+  submitting,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  mode: "create" | "edit";
+  initial: CalendarEvent | null;
+  initialDate: string;
+  staff: PartyMember[];
+  quests: Quest[];
+  submitting: boolean;
+  onClose: () => void;
+  onSubmit: (data: CalendarEventFormData) => void;
+}) {
+  const [form, setForm] = useState<CalendarEventFormData>({
+    ...EMPTY_EVENT_FORM,
+    eventDate: initialDate,
+  });
+  const [error, setError] = useState<string | null>(null);
+  const activeStaff = staff.filter((member) => member.isActive !== false);
+
+  useEffect(() => {
+    if (!open) return;
+    setForm(
+      mode === "edit" && initial
+        ? eventToForm(initial)
+        : { ...EMPTY_EVENT_FORM, eventDate: initialDate },
+    );
+    setError(null);
+  }, [open, mode, initial, initialDate]);
+
+  if (!open) return null;
+
+  const update = <K extends keyof CalendarEventFormData>(
+    key: K,
+    value: CalendarEventFormData[K],
+  ) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+    if (error) setError(null);
+  };
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (submitting) return;
+    if (!form.title.trim()) {
+      setError("タイトルを入力してください");
+      return;
+    }
+    if (!form.eventDate) {
+      setError("日付を選択してください");
+      return;
+    }
+    if (form.eventType === "personal" && !form.ownerName.trim()) {
+      setError("対象者を選択してください");
+      return;
+    }
+    onSubmit({
+      ...form,
+      title: form.title.trim(),
+      description: form.description.trim(),
+      ownerName: form.ownerName.trim(),
+    });
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[67] flex items-end justify-center p-0 sm:items-center sm:p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="calendar-form-title"
+    >
+      <button
+        type="button"
+        className="modal-backdrop absolute inset-0 bg-black/80"
+        aria-label="予定フォームを閉じる"
+        onClick={submitting ? undefined : onClose}
+      />
+      <section className="modal-panel relative rpg-frame max-h-[92dvh] w-full max-w-2xl overflow-y-auto custom-scroll p-5">
+        <header className="border-b-2 border-[var(--color-gold)]/30 pb-3">
+          <p className="font-[family-name:var(--font-display)] text-[10px] tracking-[0.22em] text-[var(--color-gold)]/80">
+            GUILD CALENDAR
+          </p>
+          <h2 id="calendar-form-title" className="pixel-window-title mt-1 text-xl font-bold">
+            {mode === "create" ? "予定を追加" : "予定を編集"}
+          </h2>
+        </header>
+
+        <form onSubmit={handleSubmit} className="mt-4 grid gap-3">
+          <label className="block">
+            <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">タイトル *</span>
+            <input
+              value={form.title}
+              onChange={(event) => update("title", event.target.value)}
+              disabled={submitting}
+              className="quest-input mt-1.5"
+              placeholder="例: 棚卸し"
+            />
+          </label>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <label>
+              <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">日付 *</span>
+              <input
+                type="date"
+                value={form.eventDate}
+                onChange={(event) => update("eventDate", event.target.value)}
+                disabled={submitting}
+                className="quest-input mt-1.5"
+              />
+            </label>
+            <label>
+              <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">開始時間</span>
+              <input
+                type="time"
+                value={form.startTime}
+                onChange={(event) => update("startTime", event.target.value)}
+                disabled={submitting}
+                className="quest-input mt-1.5"
+              />
+            </label>
+            <label>
+              <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">終了時間</span>
+              <input
+                type="time"
+                value={form.endTime}
+                onChange={(event) => update("endTime", event.target.value)}
+                disabled={submitting}
+                className="quest-input mt-1.5"
+              />
+            </label>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <label>
+              <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">種別</span>
+              <select
+                value={form.eventType}
+                onChange={(event) =>
+                  update("eventType", event.target.value as CalendarEventType)
+                }
+                disabled={submitting}
+                className="quest-input mt-1.5"
+              >
+                {Object.entries(EVENT_TYPE_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">重要度</span>
+              <select
+                value={form.importance}
+                onChange={(event) => update("importance", Number(event.target.value))}
+                disabled={submitting}
+                className="quest-input mt-1.5"
+              >
+                {[1, 2, 3, 4, 5].map((value) => (
+                  <option key={value} value={value}>
+                    {value} / {IMPORTANCE_LABELS[value]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">
+                対象者{form.eventType === "personal" ? " *" : ""}
+              </span>
+              <select
+                value={form.ownerName}
+                onChange={(event) => update("ownerName", event.target.value)}
+                disabled={submitting}
+                className="quest-input mt-1.5"
+              >
+                <option value="">未選択</option>
+                {activeStaff.map((member) => (
+                  <option key={member.id} value={member.name}>
+                    {member.name} Lv.{member.level}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <label>
+            <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">関連クエスト</span>
+            <select
+              value={form.linkedQuestId ?? ""}
+              onChange={(event) =>
+                update(
+                  "linkedQuestId",
+                  event.target.value ? Number(event.target.value) : null,
+                )
+              }
+              disabled={submitting}
+              className="quest-input mt-1.5"
+            >
+              <option value="">未選択</option>
+              {quests.map((quest) => (
+                <option key={quest.id} value={quest.id}>
+                  {quest.title}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">説明</span>
+            <textarea
+              value={form.description}
+              onChange={(event) => update("description", event.target.value)}
+              disabled={submitting}
+              rows={3}
+              className="quest-input mt-1.5 resize-none"
+              placeholder="予定の詳細や注意点..."
+            />
+          </label>
+
+          {error && (
+            <p className="border-2 border-red-400/55 bg-red-500/10 px-3 py-2 text-sm text-red-200 shadow-[3px_3px_0_#000]">
+              {error}
+            </p>
+          )}
+
+          <footer className="grid gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={submitting}
+              className="quest-btn-secondary disabled:opacity-45"
+            >
+              キャンセル
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="quest-btn-primary disabled:opacity-45"
+            >
+              {mode === "create" ? "予定を記す" : "保存する"}
+            </button>
+          </footer>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function CalendarEventDetailModal({
+  event,
+  relatedQuests,
+  disabled,
+  onClose,
+  onEdit,
+  onDelete,
+}: {
+  event: CalendarEvent | null;
+  relatedQuests: Quest[];
+  disabled: boolean;
+  onClose: () => void;
+  onEdit: (eventId: number) => void;
+  onDelete: (event: CalendarEvent) => void;
+}) {
+  if (!event) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[68] flex items-end justify-center p-0 sm:items-center sm:p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="calendar-detail-title"
+    >
+      <button
+        type="button"
+        className="modal-backdrop absolute inset-0 bg-black/80"
+        aria-label="予定詳細を閉じる"
+        onClick={disabled ? undefined : onClose}
+      />
+      <section className="modal-panel relative rpg-frame max-h-[92dvh] w-full max-w-xl overflow-y-auto custom-scroll p-5">
+        <header className="border-b-2 border-[var(--color-gold)]/30 pb-3">
+          <div className="mb-2 flex flex-wrap gap-1">
+            <span className={`calendar-tag ${EVENT_TYPE_TONES[event.eventType]}`}>
+              {EVENT_TYPE_LABELS[event.eventType]}
+            </span>
+            <span className="calendar-tag">重要度{event.importance}</span>
+          </div>
+          <h2 id="calendar-detail-title" className="pixel-window-title text-xl font-bold">
+            {event.title}
+          </h2>
+          <p className="mt-2 text-sm text-slate-400">
+            {formatCalendarDate(event.eventDate)} / {formatEventTime(event)}
+            {event.ownerName ? ` / 対象者: ${event.ownerName}` : ""}
+          </p>
+        </header>
+
+        {event.description && (
+          <section className="mt-4 border-2 border-white/15 bg-black/20 p-3 shadow-[3px_3px_0_#000]">
+            <h3 className="pixel-title text-sm text-[var(--color-gold-bright)]">予定メモ</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-300">{event.description}</p>
+          </section>
+        )}
+
+        <section className="mt-4 border-2 border-white/15 bg-black/20 p-3 shadow-[3px_3px_0_#000]">
+          <h3 className="pixel-title text-sm text-[var(--color-gold-bright)]">関連依頼</h3>
+          {relatedQuests.length > 0 ? (
+            <div className="mt-2 grid gap-1.5">
+              {relatedQuests.map((quest) => (
+                <p key={quest.id} className="text-sm text-slate-300">
+                  {quest.title} / 依頼ランク {getPriorityScore(quest)}
+                </p>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-2 text-sm text-slate-500">関連依頼はありません。</p>
+          )}
+        </section>
+
+        <footer className="mt-5 grid gap-2 sm:grid-cols-3">
+          <button type="button" onClick={onClose} disabled={disabled} className="quest-btn-secondary disabled:opacity-45">
+            戻る
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              onEdit(event.id);
+            }}
+            disabled={disabled}
+            className="quest-btn-ghost disabled:opacity-45"
+          >
+            編集
+          </button>
+          <button
+            type="button"
+            onClick={() => onDelete(event)}
+            disabled={disabled}
+            className="quest-btn-ghost border-red-400/70 text-red-200 disabled:opacity-45"
+          >
+            削除
+          </button>
+        </footer>
+      </section>
     </div>
   );
 }
@@ -2042,6 +2615,7 @@ function RecommendedQuest({
   quest,
   selectedPlayer,
   staffByName,
+  relatedEvent,
   busy,
   onAccept,
   onBecomeSuccessor,
@@ -2054,6 +2628,7 @@ function RecommendedQuest({
   quest: Quest;
   selectedPlayer: string;
   staffByName: ReadonlyMap<string, PartyMember>;
+  relatedEvent?: CalendarEvent | null;
   busy: boolean;
   onAccept: (questId: number) => void;
   onBecomeSuccessor: (questId: number) => void;
@@ -2093,6 +2668,7 @@ function RecommendedQuest({
         index={0}
         selectedPlayer={selectedPlayer}
         staffByName={staffByName}
+        relatedEvent={relatedEvent}
         onAccept={onAccept}
         onBecomeSuccessor={onBecomeSuccessor}
         onRequestSuccession={onRequestSuccession}
@@ -2385,6 +2961,292 @@ function EmptyState({
         {message}
       </p>
     </div>
+  );
+}
+
+function CalendarPanel({
+  events,
+  quests,
+  staff,
+  loading,
+  monthDate,
+  selectedDate,
+  onMonthChange,
+  onSelectedDateChange,
+  onCreate,
+  onEdit,
+  onOpenDetail,
+  busy,
+}: {
+  events: CalendarEvent[];
+  quests: Quest[];
+  staff: PartyMember[];
+  loading: boolean;
+  monthDate: Date;
+  selectedDate: string;
+  onMonthChange: (date: Date) => void;
+  onSelectedDateChange: (date: string) => void;
+  onCreate: (date: string) => void;
+  onEdit: (eventId: number) => void;
+  onOpenDetail: (eventId: number) => void;
+  busy: boolean;
+}) {
+  const monthGrid = getMonthGrid(monthDate);
+  const eventsByDate = useMemo(() => {
+    const map = new Map<string, CalendarEvent[]>();
+    for (const event of events) {
+      const list = map.get(event.eventDate) ?? [];
+      list.push(event);
+      map.set(event.eventDate, list);
+    }
+    for (const list of map.values()) {
+      list.sort(compareCalendarEvents);
+    }
+    return map;
+  }, [events]);
+  const selectedEvents = eventsByDate.get(selectedDate) ?? [];
+  const weekRange = getWeekRange(new Date());
+  const weekEvents = events
+    .filter((event) => isDateWithinRange(event.eventDate, weekRange.start, weekRange.end))
+    .sort(compareCalendarEvents);
+  const activeStaff = staff.filter((member) => member.isActive !== false);
+
+  const moveMonth = (offset: number) => {
+    onMonthChange(new Date(monthDate.getFullYear(), monthDate.getMonth() + offset, 1));
+  };
+
+  const goToday = () => {
+    const today = new Date();
+    onMonthChange(today);
+    onSelectedDateChange(toDateInputValue(today));
+  };
+
+  return (
+    <div
+      className={`min-h-0 flex-1 overflow-y-auto custom-scroll space-y-3 pb-20 lg:pb-1 pr-1 ${busy ? "opacity-80 pointer-events-none" : ""}`}
+    >
+      <section className="rpg-frame calendar-board p-3 sm:p-4">
+        <header className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-[var(--color-gold)]/20 pb-3">
+          <div>
+            <p className="font-[family-name:var(--font-display)] text-[10px] tracking-[0.22em] text-[var(--color-gold)]/80">
+              GUILD CALENDAR
+            </p>
+            <h3 className="pixel-window-title mt-1 text-base font-semibold">
+              ギルド暦
+            </h3>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button type="button" onClick={() => moveMonth(-1)} className="quest-btn-ghost min-h-11 px-3 text-xs">
+              前月
+            </button>
+            <button type="button" onClick={goToday} className="quest-btn-ghost min-h-11 px-3 text-xs">
+              今日へ
+            </button>
+            <button type="button" onClick={() => moveMonth(1)} className="quest-btn-ghost min-h-11 px-3 text-xs">
+              次月
+            </button>
+            <button type="button" onClick={() => onCreate(selectedDate)} className="quest-btn-primary min-h-11 px-3 text-xs">
+              予定追加
+            </button>
+          </div>
+        </header>
+
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h4 className="pixel-title text-lg text-[var(--color-gold-bright)]">
+            {formatCalendarMonth(monthDate)}
+          </h4>
+          <p className="text-xs text-slate-500">
+            {loading ? "読み込み中..." : `${events.length}件の予定`}
+          </p>
+        </div>
+
+        <div className="calendar-weekdays grid grid-cols-7 gap-1 text-center text-[10px] text-[var(--color-gold)]">
+          {["日", "月", "火", "水", "木", "金", "土"].map((day) => (
+            <span key={day} className="py-1">{day}</span>
+          ))}
+        </div>
+        <div className="calendar-month-grid mt-1 grid grid-cols-7 gap-1">
+          {monthGrid.map((cell) => {
+            const dayEvents = eventsByDate.get(cell.dateKey) ?? [];
+            const hasHighImportance = dayEvents.some((event) => event.importance >= 4);
+            const isSelected = selectedDate === cell.dateKey;
+            return (
+              <button
+                key={cell.dateKey}
+                type="button"
+                onClick={() => onSelectedDateChange(cell.dateKey)}
+                className={`calendar-day-cell ${cell.inMonth ? "" : "is-muted"} ${cell.isToday ? "is-today" : ""} ${isSelected ? "is-selected" : ""} ${hasHighImportance ? "has-important" : ""}`}
+              >
+                <span className="calendar-day-number">{cell.date.getDate()}</span>
+                {dayEvents.length > 0 && (
+                  <span className="calendar-day-count">{dayEvents.length}件</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <div className="grid min-h-0 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.7fr)]">
+        <section className="rpg-frame min-h-0 p-3 sm:p-4">
+          <header className="mb-3 flex items-center justify-between gap-2 border-b border-[var(--color-gold)]/20 pb-3">
+            <div>
+              <h3 className="pixel-window-title text-sm font-semibold">
+                {formatCalendarDate(selectedDate)}
+              </h3>
+              <p className="mt-1 text-xs text-slate-500">日別詳細</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onCreate(selectedDate)}
+              className="quest-btn-ghost min-h-11 px-3 text-xs"
+            >
+              追加
+            </button>
+          </header>
+          <EventList
+            events={selectedEvents}
+            quests={quests}
+            emptyText="この日の予定はありません。"
+            onEdit={onEdit}
+            onOpenDetail={onOpenDetail}
+          />
+        </section>
+
+        <section className="rpg-frame min-h-0 p-3 sm:p-4">
+          <header className="mb-3 border-b border-[var(--color-gold)]/20 pb-3">
+            <h3 className="pixel-window-title text-sm font-semibold">
+              今週の予定
+            </h3>
+            <p className="mt-1 text-xs text-slate-500">
+              今日から7日間 / 個人予定は {activeStaff.length}名から選択できます
+            </p>
+          </header>
+          <EventList
+            events={weekEvents}
+            quests={quests}
+            emptyText="今週の予定はありません。"
+            onEdit={onEdit}
+            onOpenDetail={onOpenDetail}
+            compact
+          />
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function EventList({
+  events,
+  quests,
+  emptyText,
+  onEdit,
+  onOpenDetail,
+  compact = false,
+}: {
+  events: CalendarEvent[];
+  quests: Quest[];
+  emptyText: string;
+  onEdit: (eventId: number) => void;
+  onOpenDetail: (eventId: number) => void;
+  compact?: boolean;
+}) {
+  if (events.length === 0) {
+    return <p className="py-4 text-center text-sm text-slate-500">{emptyText}</p>;
+  }
+
+  return (
+    <div className="grid gap-2">
+      {events.map((event) => (
+        <CalendarEventCard
+          key={event.id}
+          event={event}
+          relatedQuests={getRelatedQuestsForEvent(event, quests)}
+          onEdit={() => onEdit(event.id)}
+          onOpenDetail={() => onOpenDetail(event.id)}
+          compact={compact}
+        />
+      ))}
+    </div>
+  );
+}
+
+function CalendarEventCard({
+  event,
+  relatedQuests,
+  onEdit,
+  onOpenDetail,
+  compact = false,
+}: {
+  event: CalendarEvent;
+  relatedQuests: Quest[];
+  onEdit: () => void;
+  onOpenDetail: () => void;
+  compact?: boolean;
+}) {
+  const deadlinePast = isPastDeadline(event);
+  const days = daysUntil(event.eventDate);
+
+  return (
+    <article
+      className={`calendar-event-card ${EVENT_TYPE_TONES[event.eventType]} importance-${event.importance} ${deadlinePast ? "is-overdue" : ""} p-3`}
+    >
+      <div className="flex min-w-0 items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex flex-wrap gap-1">
+            <span className="calendar-tag">{EVENT_TYPE_LABELS[event.eventType]}</span>
+            <span className="calendar-tag">重要度{event.importance}</span>
+            {deadlinePast && <span className="calendar-tag is-danger">期限超過</span>}
+            {event.eventType === "deadline" && !deadlinePast && days <= 3 && (
+              <span className="calendar-tag is-danger">期限まで{days}日</span>
+            )}
+          </div>
+          <h4 className="mt-2 truncate pixel-title text-sm text-slate-100">
+            {event.title}
+          </h4>
+          <p className="mt-1 text-[11px] text-slate-500">
+            {formatCalendarDate(event.eventDate)} / {formatEventTime(event)}
+            {event.ownerName ? ` / ${event.ownerName}` : ""}
+          </p>
+        </div>
+        <div className="flex shrink-0 gap-1">
+          <button type="button" onClick={onOpenDetail} className="quest-btn-ghost min-h-11 px-2 text-[10px]">
+            詳細
+          </button>
+          {!compact && (
+            <button type="button" onClick={onEdit} className="quest-btn-ghost min-h-11 px-2 text-[10px]">
+              編集
+            </button>
+          )}
+        </div>
+      </div>
+      {!compact && event.description && (
+        <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-400">
+          {event.description}
+        </p>
+      )}
+      {relatedQuests.length > 0 && (
+        <p className="mt-2 text-[11px] text-[var(--color-gold-bright)]">
+          関連依頼: {relatedQuests.map((quest) => quest.title).join(" / ")}
+        </p>
+      )}
+    </article>
+  );
+}
+
+function compareCalendarEvents(a: CalendarEvent, b: CalendarEvent) {
+  const byDate = a.eventDate.localeCompare(b.eventDate);
+  if (byDate !== 0) return byDate;
+  const byTime = (a.startTime || "99:99").localeCompare(b.startTime || "99:99");
+  if (byTime !== 0) return byTime;
+  return b.importance - a.importance;
+}
+
+function getRelatedQuestsForEvent(event: CalendarEvent, quests: Quest[]) {
+  return quests.filter(
+    (quest) =>
+      quest.linkedEventId === event.id ||
+      (event.linkedQuestId != null && quest.id === event.linkedQuestId),
   );
 }
 

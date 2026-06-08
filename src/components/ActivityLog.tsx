@@ -12,6 +12,10 @@ const ACTION_SENTENCE: Record<QuestLogAction, string> = {
   reopened: "を再掲しました。",
   expedition_started: "へ出発しました。",
   expedition_claimed: "から帰還しました。",
+  calendar_event_created: "をギルド暦に追加しました。",
+  calendar_event_updated: "を更新しました。",
+  calendar_event_deleted: "を削除しました。",
+  quest_linked_event: "を予定と関連付けました。",
 };
 
 interface ActivityLogProps {

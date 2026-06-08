@@ -20,6 +20,7 @@
    - `supabase/migrations/004_guild_growth_scores.sql`
    - `supabase/migrations/005_staff_avatar_type.sql`
    - `supabase/migrations/006_expeditions.sql`
+   - `supabase/migrations/007_calendar_events.sql`
 3. `quests` と `quest_logs` がRealtime対象になっていることを確認します。
    - マイグレーション内で `alter publication supabase_realtime add table ...` を実行しています。
 4. Project Settings → API から以下を控えます。
@@ -140,6 +141,25 @@ npm run dev
 遠征機能を使うには `supabase/migrations/006_expeditions.sql` を実行してください。
 遠征テーブルも現在のデモ方針に合わせ、匿名読み書きを許可しています。本格運用ではSupabase Auth等による権限管理を検討してください。
 
+## ギルド暦
+
+ギルド暦は、店舗・職場の予定をギルドクエスト内で共有するためのカレンダー機能です。
+
+できること:
+
+- 月表示で予定を確認
+- 今日へ戻る、前月/次月への移動
+- 日別の予定確認
+- 今日から7日間の「今週の予定」確認
+- ギルド予定、個人予定、シフト、期限、メモの登録
+- 重要度1-5による強調表示
+- クエストと予定の相互リンク
+
+PC版では左メニューの「ギルド暦」から開けます。スマホ版では下部ナビの「暦」から開けます。
+
+ギルド暦を使うには `supabase/migrations/007_calendar_events.sql` を実行してください。
+この機能も現在のデモ方針に合わせ、匿名読み書きを許可しています。本格運用ではSupabase Auth等による権限管理を検討してください。
+
 ## パイロット運用ルール
 
 最初の1-2週間は、以下のルールで小さく始めるのがおすすめです。
@@ -164,6 +184,7 @@ npm run dev
 | `urgency` | 1-5。緊急度。 |
 | `importance` | 1-5。重要度。 |
 | `completed_at` | 達成時に設定、再掲時にクリア |
+| `linked_event_id` | 関連するギルド暦予定。任意。 |
 
 ### `staff`
 
@@ -192,6 +213,19 @@ npm run dev
 
 遠征先、出発時刻、帰還予定時刻、報酬、受取状態を保存します。
 同じ冒険者が同時に進められる遠征は1件までです。
+
+### `calendar_events`
+
+ギルド暦の予定を保存します。
+
+| Column | Notes |
+| --- | --- |
+| `event_date` | 予定日 |
+| `start_time` / `end_time` | 任意の開始・終了時刻 |
+| `event_type` | `guild`, `personal`, `shift`, `deadline`, `memo` |
+| `importance` | 1-5。重要予定の強調に使用 |
+| `owner_name` | 個人予定などの対象者 |
+| `linked_quest_id` | 関連するクエスト。任意。 |
 
 ## 現在の制限
 

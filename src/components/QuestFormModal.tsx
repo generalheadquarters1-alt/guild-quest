@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { AvatarSprite } from "./AvatarSprite";
+import {
+  EVENT_TYPE_LABELS,
+  formatCalendarDate,
+  formatEventTime,
+  type CalendarEvent,
+} from "../data/calendar";
 import type { PartyMember, Priority, Quest, QuestLevel } from "../data/quests";
 
 export interface QuestFormData {
@@ -11,6 +17,7 @@ export interface QuestFormData {
   importance: number;
   estimatedTime: string;
   description: string;
+  linkedEventId: number | null;
 }
 
 interface QuestFormModalProps {
@@ -19,6 +26,7 @@ interface QuestFormModalProps {
   initial?: Quest | null;
   staff: PartyMember[];
   selectedPlayer: string;
+  calendarEvents: CalendarEvent[];
   onClose: () => void;
   onSubmit: (data: QuestFormData) => void;
   submitting?: boolean;
@@ -50,6 +58,7 @@ const EMPTY_FORM: QuestFormData = {
   importance: 3,
   estimatedTime: "",
   description: "",
+  linkedEventId: null,
 };
 
 function questToForm(quest: Quest): QuestFormData {
@@ -62,6 +71,7 @@ function questToForm(quest: Quest): QuestFormData {
     importance: quest.importance,
     estimatedTime: quest.estimatedTime === "—" ? "" : quest.estimatedTime,
     description: quest.description,
+    linkedEventId: quest.linkedEventId ?? null,
   };
 }
 
@@ -71,6 +81,7 @@ export function QuestFormModal({
   initial,
   staff,
   selectedPlayer,
+  calendarEvents,
   onClose,
   onSubmit,
   submitting = false,
@@ -88,6 +99,18 @@ export function QuestFormModal({
       ? selectedPlayer
       : "";
   }, [activeStaff, selectedPlayer]);
+
+  const eventOptions = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return [...calendarEvents].sort((a, b) => {
+      const aFuture = a.eventDate >= today ? 0 : 1;
+      const bFuture = b.eventDate >= today ? 0 : 1;
+      if (aFuture !== bFuture) return aFuture - bFuture;
+      const byDate = a.eventDate.localeCompare(b.eventDate);
+      if (byDate !== 0) return byDate;
+      return (a.startTime || "99:99").localeCompare(b.startTime || "99:99");
+    });
+  }, [calendarEvents]);
 
   useEffect(() => {
     if (open) {
@@ -259,6 +282,27 @@ export function QuestFormModal({
               placeholder="例: 30分, 2h, 1日"
               className="quest-input"
             />
+          </FormField>
+
+          <FormField label="関連予定">
+            <select
+              value={form.linkedEventId ?? ""}
+              onChange={(e) =>
+                update(
+                  "linkedEventId",
+                  e.target.value ? Number(e.target.value) : null,
+                )
+              }
+              disabled={submitting}
+              className="quest-input"
+            >
+              <option value="">関連する予定を選択</option>
+              {eventOptions.map((event) => (
+                <option key={event.id} value={event.id}>
+                  {formatCalendarDate(event.eventDate)} {formatEventTime(event)} [{EVENT_TYPE_LABELS[event.eventType]}] {event.title}
+                </option>
+              ))}
+            </select>
           </FormField>
 
           <FormField label="説明">
