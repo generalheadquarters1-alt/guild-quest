@@ -14,7 +14,17 @@ export type QuestLogAction =
   | "calendar_event_created"
   | "calendar_event_updated"
   | "calendar_event_deleted"
-  | "quest_linked_event";
+  | "quest_linked_event"
+  | "task_created"
+  | "task_updated"
+  | "task_deleted"
+  | "task_delegated"
+  | "task_completed"
+  | "guild_suggestion_sent"
+  | "guild_assignment_sent"
+  | "guild_directive_issued"
+  | "guild_request_accepted"
+  | "guild_request_rejected";
 
 export interface QuestLog {
   id: number;
@@ -92,4 +102,14 @@ export const LOG_ACTION_LABELS: Record<QuestLogAction, string> = {
   calendar_event_updated: "ギルド暦を更新",
   calendar_event_deleted: "ギルド暦から削除",
   quest_linked_event: "予定と関連付け",
+  task_created: "任務を記録",
+  task_updated: "任務を更新",
+  task_deleted: "任務を削除",
+  task_delegated: "任務を依頼書化",
+  task_completed: "任務を達成",
+  guild_suggestion_sent: "助言を送信",
+  guild_assignment_sent: "指名依頼を送信",
+  guild_directive_issued: "ギルド指令を発令",
+  guild_request_accepted: "提案を承認",
+  guild_request_rejected: "提案を却下",
 };

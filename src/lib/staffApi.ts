@@ -63,6 +63,7 @@ export async function ensureStaffMember(
   const insertPayload = {
     name: normalizedName,
     role: "冒険者",
+    role_level: "adventurer",
     avatar: resolveEntryAvatar(normalizedName),
     avatar_type: normalizedAvatarType,
     hp: 100,

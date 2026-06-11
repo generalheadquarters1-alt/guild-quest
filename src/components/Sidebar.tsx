@@ -1,4 +1,6 @@
 type NavId =
+  | "notebook"
+  | "notices"
   | "board"
   | "my"
   | "calendar"
@@ -38,9 +40,31 @@ export function Sidebar({
     onSelect: () => void;
   }> = [
     {
+      key: "notebook",
+      icon: "📔",
+      label: "冒険者手帳",
+      sub: "本日の任務",
+      selected: active === "notebook",
+      onSelect: () => {
+        onNavigate("notebook");
+        onQuickFilter(null);
+      },
+    },
+    {
+      key: "notices",
+      icon: "⚠",
+      label: "気付きの書",
+      sub: "NOTICE",
+      selected: active === "notices",
+      onSelect: () => {
+        onNavigate("notices");
+        onQuickFilter(null);
+      },
+    },
+    {
       key: "board",
       icon: "📜",
-      label: "クエスト掲示板",
+      label: "ギルド依頼",
       sub: "QUEST BOARD",
       selected: active === "board" && quickFilter == null,
       onSelect: () => {

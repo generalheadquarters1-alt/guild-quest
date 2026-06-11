@@ -5,6 +5,7 @@ export interface StaffRow {
   id: number;
   name: string;
   role: string;
+  role_level?: string | null;
   avatar: string;
   hp: number;
   mp: number;
@@ -26,6 +27,11 @@ const FRAMES: PartyMember["avatarFrame"][] = [
   "gold",
   "platinum",
 ];
+const ROLE_LEVELS: PartyMember["roleLevel"][] = [
+  "adventurer",
+  "sub_master",
+  "guild_master",
+];
 
 function parseStatus(value: string): PartyMember["status"] {
   if (STATUSES.includes(value as PartyMember["status"])) {
@@ -41,11 +47,19 @@ function parseFrame(value: string | null | undefined): PartyMember["avatarFrame"
   return "bronze";
 }
 
+function parseRoleLevel(value: string | null | undefined): PartyMember["roleLevel"] {
+  if (ROLE_LEVELS.includes(value as PartyMember["roleLevel"])) {
+    return value as PartyMember["roleLevel"];
+  }
+  return "adventurer";
+}
+
 export function rowToStaffMember(row: StaffRow): PartyMember {
   return {
     id: String(row.id),
     name: row.name,
     role: row.role,
+    roleLevel: parseRoleLevel(row.role_level),
     avatar: row.avatar,
     hp: row.hp,
     mp: row.mp,

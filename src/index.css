@@ -2016,6 +2016,192 @@ textarea:focus-visible {
   animation: reward-spark 1.1s ease-out var(--delay) both;
 }
 
+.notebook-cover {
+  background:
+    linear-gradient(90deg, rgba(123, 70, 31, 0.28), transparent 54%),
+    repeating-linear-gradient(0deg, rgba(255, 244, 196, 0.045) 0 2px, transparent 2px 7px),
+    linear-gradient(180deg, #25130f 0%, #130d12 100%);
+}
+
+.notebook-stat {
+  border-color: rgba(255, 244, 196, 0.22);
+}
+
+.notebook-stat-gold {
+  border-color: rgba(255, 240, 168, 0.46);
+}
+
+.notebook-stat-red {
+  border-color: rgba(255, 96, 96, 0.45);
+}
+
+.notebook-stat-purple {
+  border-color: rgba(185, 120, 255, 0.45);
+}
+
+.notebook-stat-blue {
+  border-color: rgba(98, 184, 255, 0.45);
+}
+
+.notebook-stat-green {
+  border-color: rgba(117, 198, 107, 0.45);
+}
+
+.task-note-card {
+  position: relative;
+  border: 3px solid rgba(255, 244, 196, 0.64);
+  background:
+    linear-gradient(90deg, rgba(255, 240, 168, 0.08), transparent 46%),
+    repeating-linear-gradient(0deg, rgba(255, 244, 196, 0.035) 0 2px, transparent 2px 8px),
+    #11101b;
+  box-shadow:
+    0 0 0 3px #050510 inset,
+    4px 4px 0 #000;
+}
+
+.task-note-card::before {
+  content: "";
+  position: absolute;
+  inset: 8px auto 8px 8px;
+  width: 4px;
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 240, 168, 0.38) 0 5px, transparent 5px 11px);
+  pointer-events: none;
+}
+
+.task-note-card.task-due-overdue,
+.task-note-card.task-due-today {
+  border-color: rgba(255, 96, 96, 0.78);
+  background:
+    linear-gradient(90deg, rgba(150, 26, 30, 0.2), transparent 48%),
+    #11101b;
+}
+
+.task-note-card.task-due-soon {
+  border-color: rgba(255, 202, 86, 0.72);
+}
+
+.task-status-badge {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  border: 2px solid rgba(255, 244, 196, 0.4);
+  background: rgba(0, 0, 0, 0.42);
+  padding: 0.1rem 0.45rem;
+  color: #fff4c4;
+  font-size: 0.68rem;
+  font-weight: 700;
+  box-shadow: 2px 2px 0 #000;
+}
+
+.task-status-todo {
+  border-color: rgba(98, 184, 255, 0.62);
+  color: #9bd2ff;
+}
+
+.task-status-in_progress {
+  border-color: rgba(255, 240, 168, 0.62);
+  color: #fff0a8;
+}
+
+.task-status-delegated {
+  border-color: rgba(185, 120, 255, 0.68);
+  color: #d9b4ff;
+}
+
+.task-status-completed {
+  border-color: rgba(117, 198, 107, 0.62);
+  color: #a8ec9c;
+}
+
+.notice-book-cover {
+  background:
+    linear-gradient(90deg, rgba(97, 50, 23, 0.34), transparent 58%),
+    repeating-linear-gradient(0deg, rgba(255, 244, 196, 0.04) 0 2px, transparent 2px 8px),
+    linear-gradient(180deg, #24150f 0%, #11101b 100%);
+}
+
+.notice-scroll-card,
+.guild-request-card {
+  position: relative;
+  border: 3px solid rgba(255, 244, 196, 0.55);
+  background:
+    linear-gradient(90deg, rgba(255, 240, 168, 0.08), transparent 46%),
+    #11101b;
+  box-shadow:
+    0 0 0 3px #050510 inset,
+    4px 4px 0 #000;
+}
+
+.notice-scroll-card::after,
+.guild-request-card::after {
+  content: "";
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 2px solid rgba(0, 0, 0, 0.45);
+  background: var(--color-gold);
+  box-shadow:
+    2px 2px 0 #000,
+    0 0 12px rgba(216, 163, 60, 0.34);
+  pointer-events: none;
+}
+
+.notice-type-deadline_warning::after {
+  background: #f7c948;
+}
+
+.notice-type-overdue {
+  border-color: rgba(255, 96, 96, 0.78);
+  animation: overdue-alert 1.1s steps(2, end) infinite;
+}
+
+.notice-type-overdue::after,
+.guild-request-directive::after {
+  background: #d64545;
+}
+
+.guild-request-suggestion::after {
+  background: #62b8ff;
+}
+
+.guild-request-assignment::after {
+  background: #fff0a8;
+}
+
+.guild-request-modal.guild-request-suggestion,
+.guild-request-card.guild-request-suggestion {
+  border-color: rgba(98, 184, 255, 0.62);
+}
+
+.guild-request-modal.guild-request-assignment,
+.guild-request-card.guild-request-assignment {
+  border-color: rgba(255, 240, 168, 0.68);
+}
+
+.guild-request-modal.guild-request-directive,
+.guild-request-card.guild-request-directive {
+  border-color: rgba(255, 96, 96, 0.76);
+}
+
+@keyframes overdue-alert {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 3px #050510 inset,
+      4px 4px 0 #000;
+  }
+  50% {
+    box-shadow:
+      0 0 0 3px #050510 inset,
+      4px 4px 0 #000,
+      0 0 18px rgba(255, 96, 96, 0.35);
+  }
+}
+
 @keyframes reward-spark {
   from {
     opacity: 0;

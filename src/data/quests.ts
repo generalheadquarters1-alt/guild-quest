@@ -34,6 +34,7 @@ export interface PartyMember {
   id: string;
   name: string;
   role: string;
+  roleLevel: "adventurer" | "sub_master" | "guild_master";
   hp: number;
   mp: number;
   status: "ready" | "busy" | "resting";

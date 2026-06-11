@@ -2,6 +2,7 @@ import type { QuestFormData } from "../components/QuestFormModal";
 import { getExpeditionTicketsForRank } from "../data/expeditions";
 import { EMPTY_SLOT, type Quest } from "../data/quests";
 import { awardExpeditionTickets } from "./expeditionApi";
+import { completeTaskLinkedToQuest } from "./adventurerTaskApi";
 import { insertQuestLog } from "./questLogApi";
 import { awardPlayerExp } from "./staffApi";
 import {
@@ -186,6 +187,8 @@ export async function completeQuest(
     action: "completed",
     actorName,
   });
+
+  await completeTaskLinkedToQuest(updated.id, actorName);
 
   return updated;
 }

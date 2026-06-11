@@ -1,6 +1,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type FormEvent,
@@ -48,11 +49,40 @@ import {
   type CalendarEventFormData,
   type CalendarEventType,
 } from "./data/calendar";
+import {
+  EMPTY_TASK_FORM,
+  TASK_STATUS_LABELS,
+  TASK_TAB_LABELS,
+  filterTasksByTab,
+  getTaskBaseExp,
+  getTaskDueLabel,
+  getTaskDueTone,
+  getTaskScore,
+  sortTasks as sortAdventurerTasks,
+  taskToForm,
+  type AdventurerTask,
+  type AdventurerTaskFormData,
+  type AdventurerTaskTab,
+} from "./data/adventurerTasks";
+import {
+  NOTICE_TYPE_LABELS,
+  REQUEST_STATUS_LABELS,
+  REQUEST_TYPE_LABELS,
+  canIssueDirective,
+  getDeadlineWarningLevel,
+  getRequestTone,
+  type GuildNotice,
+  type GuildRequest,
+  type GuildRequestFormData,
+  type GuildRequestType,
+} from "./data/guildOperations";
 import { AVATAR_OPTIONS, DEFAULT_AVATAR_TYPE } from "./data/avatars";
 import { GUILD_STATS } from "./data/quests";
 import type { CompletedQuestEntry, PartyMember, Quest } from "./data/quests";
 import { useExpeditions } from "./hooks/useExpeditions";
 import { useCalendarEvents } from "./hooks/useCalendarEvents";
+import { useAdventurerTasks } from "./hooks/useAdventurerTasks";
+import { useGuildOperations } from "./hooks/useGuildOperations";
 import type { QuestLog } from "./lib/questLogApi";
 import { useQuestLogs } from "./hooks/useQuestLogs";
 import { useQuests } from "./hooks/useQuests";
@@ -67,6 +97,21 @@ import {
   deleteCalendarEvent,
   updateCalendarEvent,
 } from "./lib/calendarApi";
+import {
+  completeAdventurerTask,
+  createAdventurerTask,
+  delegateTaskToQuest,
+  deleteAdventurerTask,
+  updateAdventurerTask,
+} from "./lib/adventurerTaskApi";
+import {
+  acceptGuildRequest,
+  createGuildRequest,
+  dismissGuildNotice,
+  issueGuildDirective,
+  rejectGuildRequest,
+  syncDeadlineNotices,
+} from "./lib/guildOperationsApi";
 import { partitionQuests } from "./lib/questMapper";
 import {
   clearSelectedAvatar,
@@ -83,7 +128,6 @@ import {
   completeQuest,
   deleteQuestRecord,
   editQuestFields,
-  insertQuest,
   reopenQuest,
   requestSuccession,
 } from "./lib/questApi";
@@ -101,6 +145,8 @@ import {
 } from "./lib/questUtils";
 
 type NavId =
+  | "notebook"
+  | "notices"
   | "board"
   | "my"
   | "calendar"
@@ -137,8 +183,23 @@ const GUILD_CODE = import.meta.env.VITE_GUILD_CODE?.trim() ?? "";
 
 type ModalState =
   | { type: "closed" }
-  | { type: "create" }
   | { type: "edit"; questId: number };
+
+type TaskFormState =
+  | { type: "closed" }
+  | {
+      type: "create";
+      defaults?: Partial<AdventurerTaskFormData>;
+    }
+  | { type: "edit"; taskId: number };
+
+type TaskDetailState =
+  | { type: "closed" }
+  | { type: "open"; taskId: number };
+
+type GuildRequestFormState =
+  | { type: "closed" }
+  | { type: "open"; requestType: GuildRequestType; taskId?: number | null };
 
 type ConfirmState =
   | { type: "closed" }
@@ -404,6 +465,20 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
     error: calendarError,
     reload: reloadCalendar,
   } = useCalendarEvents();
+  const {
+    tasks: adventurerTasks,
+    loading: tasksLoading,
+    error: tasksError,
+    reload: reloadTasks,
+    findTask,
+  } = useAdventurerTasks();
+  const {
+    notices: guildNotices,
+    requests: guildRequests,
+    loading: guildOperationsLoading,
+    error: guildOperationsError,
+    reload: reloadGuildOperations,
+  } = useGuildOperations();
 
   const [selectedPlayer, setSelectedPlayer] = useState(() =>
     loadSelectedPlayer(""),
@@ -415,9 +490,17 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
     error: expeditionsError,
     reload: reloadExpeditions,
   } = useExpeditions(selectedPlayer);
-  const [nav, setNav] = useState<NavId>("board");
+  const [nav, setNav] = useState<NavId>("notebook");
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>("quests");
   const [modal, setModal] = useState<ModalState>({ type: "closed" });
+  const [taskForm, setTaskForm] = useState<TaskFormState>({ type: "closed" });
+  const [taskDetail, setTaskDetail] = useState<TaskDetailState>({
+    type: "closed",
+  });
+  const [guildRequestForm, setGuildRequestForm] =
+    useState<GuildRequestFormState>({ type: "closed" });
+  const [urgentReportSeen, setUrgentReportSeen] = useState(false);
+  const announcedRequestIds = useRef<Set<number>>(new Set());
   const [confirm, setConfirm] = useState<ConfirmState>({ type: "closed" });
   const [reopen, setReopen] = useState<ReopenState>({ type: "closed" });
   const [detail, setDetail] = useState<DetailState>({ type: "closed" });
@@ -454,6 +537,8 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
     () => staff.find((member) => member.name === selectedPlayer) ?? null,
     [staff, selectedPlayer],
   );
+
+  const isGuildOfficer = canIssueDirective(selectedMember?.roleLevel);
 
   const staffByName = useMemo(() => {
     return new Map(staff.map((member) => [member.name, member]));
@@ -500,6 +585,21 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (tasksLoading || adventurerTasks.length === 0) return;
+    void syncDeadlineNotices(adventurerTasks)
+      .then(() => reloadGuildOperations())
+      .catch(() => {
+        enqueueMessage({
+          speaker: "システム",
+          message: "気付きの書の更新に失敗しました。",
+          icon: "⚙️",
+          tone: "system",
+          durationMs: 2200,
+        });
+      });
+  }, [adventurerTasks, tasksLoading, reloadGuildOperations]);
 
   const closeGuide = () => {
     setGuideOpen(false);
@@ -667,6 +767,138 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
       ? calendarEventById.get(calendarDetail.eventId) ?? null
       : null;
 
+  const visibleTasks = useMemo(() => {
+    return adventurerTasks.filter(
+      (task) => task.ownerName === selectedPlayer || task.isPublic,
+    );
+  }, [adventurerTasks, selectedPlayer]);
+
+  const selectedPlayerTasks = useMemo(() => {
+    return adventurerTasks.filter((task) => task.ownerName === selectedPlayer);
+  }, [adventurerTasks, selectedPlayer]);
+
+  const editingTask =
+    taskForm.type === "edit" ? findTask(taskForm.taskId) ?? null : null;
+
+  const detailTask =
+    taskDetail.type === "open" ? findTask(taskDetail.taskId) ?? null : null;
+
+  const guildRequestSourceTask =
+    guildRequestForm.type === "open" && guildRequestForm.taskId != null
+      ? findTask(guildRequestForm.taskId) ?? null
+      : null;
+
+  const taskDashboard = useMemo(() => {
+    const activeTasks = selectedPlayerTasks.filter(
+      (task) => task.status !== "completed",
+    );
+    const todayTasks = filterTasksByTab(activeTasks, "today");
+    const dueSoon = activeTasks.filter((task) => {
+      const tone = getTaskDueTone(task);
+      return tone === "overdue" || tone === "today" || tone === "soon";
+    });
+    const delegated = activeTasks.filter((task) => task.status === "delegated");
+    const readyExpeditions = expeditions.filter((expedition) =>
+      isExpeditionReady(expedition, now),
+    );
+    const unclaimedRewards = expeditions.filter(
+      (expedition) =>
+        expedition.status === "completed" && isExpeditionReady(expedition, now),
+    );
+    const receivedRequests = guildRequests.filter(
+      (request) =>
+        request.toPlayer === selectedPlayer &&
+        request.status === "pending" &&
+        request.requestType === "assignment",
+    );
+    const receivedSuggestions = guildRequests.filter(
+      (request) =>
+        request.toPlayer === selectedPlayer &&
+        request.status === "pending" &&
+        request.requestType === "suggestion",
+    );
+    const receivedDirectives = guildRequests.filter(
+      (request) =>
+        request.toPlayer === selectedPlayer &&
+        request.requestType === "directive" &&
+        request.status !== "rejected",
+    );
+
+    return {
+      today: todayTasks.length,
+      dueSoon: dueSoon.length,
+      delegated: delegated.length,
+      receivedRequests: receivedRequests.length,
+      receivedSuggestions: receivedSuggestions.length,
+      directives: receivedDirectives.length,
+      expeditionReturns: readyExpeditions.length,
+      unclaimedRewards: unclaimedRewards.length,
+    };
+  }, [expeditions, guildRequests, now, selectedPlayer, selectedPlayerTasks]);
+
+  const relevantNotices = useMemo(() => {
+    return guildNotices.filter(
+      (notice) =>
+        !notice.dismissed &&
+        (!notice.targetPlayer ||
+          notice.targetPlayer === selectedPlayer ||
+          isGuildOfficer),
+    );
+  }, [guildNotices, isGuildOfficer, selectedPlayer]);
+
+  const receivedGuildRequests = useMemo(() => {
+    return guildRequests.filter(
+      (request) =>
+        request.toPlayer === selectedPlayer &&
+        (request.status === "pending" ||
+          (request.requestType === "directive" && request.status !== "rejected")),
+    );
+  }, [guildRequests, selectedPlayer]);
+
+  const urgentReport = useMemo(() => {
+    const activeTasks = selectedPlayerTasks.filter(
+      (task) => task.status !== "completed",
+    );
+    const overdue = activeTasks.filter(
+      (task) => getDeadlineWarningLevel(task) === "overdue",
+    );
+    const dueSoon = activeTasks.filter((task) => {
+      const level = getDeadlineWarningLevel(task);
+      return level === "within24h" || level === "within12h" || level === "within3h";
+    });
+    return {
+      overdue,
+      dueSoon,
+      shouldShow: !urgentReportSeen && (overdue.length > 0 || dueSoon.length > 0),
+    };
+  }, [selectedPlayerTasks, urgentReportSeen]);
+
+  useEffect(() => {
+    for (const request of guildRequests) {
+      if (
+        request.toPlayer !== selectedPlayer ||
+        (request.requestType === "directive"
+          ? request.status === "rejected"
+          : request.status !== "pending") ||
+        announcedRequestIds.current.has(request.id)
+      ) {
+        continue;
+      }
+
+      announcedRequestIds.current.add(request.id);
+      enqueueGuildMessage(
+        request.requestType === "suggestion"
+          ? "助言が届いています。"
+          : request.requestType === "assignment"
+            ? "新たな依頼が届きました。"
+            : "ギルド指令が発令されました。",
+        {
+          durationMs: 2600,
+        },
+      );
+    }
+  }, [guildRequests, selectedPlayer]);
+
   const runAction = async <T,>(
     key: string,
     fn: () => Promise<T>,
@@ -738,18 +970,6 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
         enqueueGuildMessage(
           `『${updated.title}』で助っ人を募集しています！`,
         );
-      },
-    );
-  };
-
-  const handleCreateQuest = (data: QuestFormData) => {
-    if (!selectedPlayer) return;
-    void runAction(
-      "create",
-      () => insertQuest(data, selectedPlayer),
-      null,
-      () => {
-        enqueueGuildMessage("新しい依頼が掲示されました！");
       },
     );
   };
@@ -939,6 +1159,221 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
     );
   };
 
+  const handleSubmitTask = (data: AdventurerTaskFormData) => {
+    if (!selectedPlayer) return;
+    const isEdit = taskForm.type === "edit";
+    const taskId = isEdit ? taskForm.taskId : null;
+    const task = taskId != null ? findTask(taskId) ?? null : null;
+
+    void runAction(
+      isEdit ? `task-edit-${taskId}` : "task-create",
+      () =>
+        isEdit && task
+          ? updateAdventurerTask(task, data, selectedPlayer)
+          : createAdventurerTask(data, selectedPlayer),
+      null,
+      (saved) => {
+        setTaskForm({ type: "closed" });
+        enqueueGuildMessage(
+          isEdit
+            ? "手帳の任務を更新しました。"
+            : "新しい任務を冒険者手帳に記しました。",
+          { durationMs: 2200 },
+        );
+        if (saved.calendarEventId != null) {
+          enqueueGuildMessage("任務の納期をギルド暦に記しました。", {
+            durationMs: 2200,
+          });
+        }
+        void reloadTasks();
+        void reloadCalendar();
+      },
+    );
+  };
+
+  const handleDelegateTask = (taskId: number) => {
+    const task = findTask(taskId);
+    if (!task || !selectedPlayer) return;
+
+    void runAction(
+      `task-delegate-${taskId}`,
+      () => delegateTaskToQuest(task, selectedPlayer),
+      null,
+      ({ quest }) => {
+        enqueueGuildMessage(`『${quest.title}』をギルドへ依頼しました！`, {
+          durationMs: 2400,
+        });
+        void reloadTasks();
+        void reload();
+      },
+    );
+  };
+
+  const handleCompleteTask = (taskId: number) => {
+    const task = findTask(taskId);
+    if (!task || !selectedPlayer) return;
+    const exp = getTaskBaseExp(task);
+    const tickets = getTicketsForRank(getTaskScore(task));
+
+    void runAction(
+      `task-complete-${taskId}`,
+      () => completeAdventurerTask(task, selectedPlayer),
+      null,
+      (updated) => {
+        setCompletionBurst({
+          title: updated.title,
+          exp,
+          coins: Math.max(10, Math.floor(exp / 2)),
+          guildExp: Math.floor(exp * 0.5),
+          tickets,
+        });
+        enqueueGuildMessage(`『${updated.title}』を達成しました！`, {
+          durationMs: 1900,
+        });
+        enqueueMessage({
+          speaker: "報酬",
+          message: "任務達成！",
+          icon: "🎁",
+          tone: "reward",
+          avatarType:
+            selectedMember?.avatarType ?? loadSelectedAvatar(DEFAULT_AVATAR_TYPE),
+          lines: [
+            `EXP +${exp}`,
+            `GOLD +${Math.max(10, Math.floor(exp / 2))}`,
+            `遠征チケット +${tickets}`,
+          ],
+          durationMs: 2800,
+        });
+        window.setTimeout(() => setCompletionBurst(null), 1800);
+        void reloadTasks();
+        void reloadStaff();
+        void reloadExpeditions();
+      },
+    );
+  };
+
+  const handleDeleteTask = (taskId: number) => {
+    const task = findTask(taskId);
+    if (!task || !selectedPlayer) return;
+
+    void runAction(
+      `task-delete-${taskId}`,
+      () => deleteAdventurerTask(task, selectedPlayer),
+      null,
+      () => {
+        setTaskDetail({ type: "closed" });
+        enqueueGuildMessage("手帳の記録を削除しました。", {
+          durationMs: 2200,
+        });
+        void reloadTasks();
+      },
+    );
+  };
+
+  const handleSubmitGuildRequest = (data: GuildRequestFormData) => {
+    if (!selectedPlayer) return;
+    const sourceTask =
+      guildRequestForm.type === "open" && guildRequestForm.taskId != null
+        ? findTask(guildRequestForm.taskId) ?? null
+        : null;
+
+    if (data.requestType === "directive") {
+      if (!isGuildOfficer) {
+        enqueueMessage({
+          speaker: "システム",
+          message: "ギルド指令はサブマスター以上のみ発令できます。",
+          icon: "⚙️",
+          tone: "system",
+          durationMs: 2600,
+        });
+        return;
+      }
+
+      const targetPlayers =
+        data.toPlayer === "__all__"
+          ? staff
+              .filter((member) => member.isActive !== false)
+              .map((member) => member.name)
+          : [data.toPlayer];
+
+      void runAction(
+        "guild-directive",
+        () =>
+          issueGuildDirective(
+            data,
+            selectedPlayer,
+            targetPlayers,
+            sourceTask?.id ?? null,
+          ),
+        null,
+        () => {
+          setGuildRequestForm({ type: "closed" });
+          enqueueGuildMessage("ギルド指令が発令されました。", {
+            durationMs: 2600,
+          });
+          void reloadGuildOperations();
+          void reloadTasks();
+        },
+      );
+      return;
+    }
+
+    void runAction(
+      `guild-request-${data.requestType}`,
+      () => createGuildRequest(data, selectedPlayer, sourceTask?.id ?? null),
+      null,
+      () => {
+        setGuildRequestForm({ type: "closed" });
+        enqueueGuildMessage(
+          data.requestType === "suggestion"
+            ? "助言を送りました。"
+            : "指名依頼を送りました。",
+          { durationMs: 2200 },
+        );
+        void reloadGuildOperations();
+      },
+    );
+  };
+
+  const handleAcceptGuildRequest = (request: GuildRequest) => {
+    if (!selectedPlayer) return;
+    void runAction(
+      `guild-request-accept-${request.id}`,
+      () => acceptGuildRequest(request, selectedPlayer),
+      null,
+      () => {
+        enqueueGuildMessage("任務を受諾しました。", { durationMs: 2200 });
+        void reloadGuildOperations();
+        void reloadTasks();
+        void reload();
+      },
+    );
+  };
+
+  const handleRejectGuildRequest = (request: GuildRequest) => {
+    if (!selectedPlayer) return;
+    void runAction(
+      `guild-request-reject-${request.id}`,
+      () => rejectGuildRequest(request, selectedPlayer),
+      null,
+      () => {
+        enqueueGuildMessage("提案を却下しました。", { durationMs: 2200 });
+        void reloadGuildOperations();
+      },
+    );
+  };
+
+  const handleDismissNotice = (noticeId: number) => {
+    void runAction(
+      `notice-dismiss-${noticeId}`,
+      () => dismissGuildNotice(noticeId),
+      null,
+      () => {
+        void reloadGuildOperations();
+      },
+    );
+  };
+
   const executeDelete = () => {
     if (confirm.type !== "delete" || !confirmQuest || !selectedPlayer) return;
     const quest = confirmQuest;
@@ -993,7 +1428,13 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
   };
 
   const boardDisabled =
-    busy || loading || staffLoading || !selectedPlayer || !isOnline;
+    busy ||
+    loading ||
+    tasksLoading ||
+    guildOperationsLoading ||
+    staffLoading ||
+    !selectedPlayer ||
+    !isOnline;
 
   if (!isSupabaseConfigured) {
     return <ConfigError />;
@@ -1017,12 +1458,12 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
       </div>
 
       <div className="relative z-10 flex h-full min-h-0 flex-col max-w-[1600px] mx-auto">
-        {(!isOnline || error || actionError || expeditionsError || calendarError) && (
+        {(!isOnline || error || actionError || expeditionsError || calendarError || tasksError || guildOperationsError) && (
           <div className="mx-4 mt-3 lg:mx-4 lg:mt-0 px-4 py-2 border-2 border-red-400/55 bg-red-500/10 text-red-200 text-xs sm:text-sm flex flex-wrap items-center justify-between gap-2 shadow-[3px_3px_0_#000]">
             <span>
               {!isOnline
                 ? "通信がオフラインのようです。接続が戻るまで操作を一時停止しています。"
-                : actionError ?? expeditionsError ?? calendarError ?? "通信魔法に失敗しました。少し時間を置いて再度お試しください。"}
+                : actionError ?? expeditionsError ?? calendarError ?? tasksError ?? guildOperationsError ?? "通信魔法に失敗しました。少し時間を置いて再度お試しください。"}
             </span>
             {error && (
               <button
@@ -1081,11 +1522,11 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
               </button>
               <button
                 type="button"
-                onClick={() => setModal({ type: "create" })}
+                onClick={() => setTaskForm({ type: "create" })}
                 disabled={boardDisabled}
                 className="quest-btn-primary mobile-post-command text-xs px-2.5 py-1.5 disabled:opacity-50"
               >
-                掲示
+                任務
               </button>
             </div>
           </div>
@@ -1132,8 +1573,12 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                               ? "緊急クエスト"
                               : quickFilter === "mine"
                                 ? "自分のクエスト"
-                                : nav === "board"
-                        ? "クエスト掲示板"
+                                : nav === "notebook"
+                                  ? "本日の任務"
+                                  : nav === "notices"
+                                    ? "気付きの書"
+                                  : nav === "board"
+                        ? "ギルド依頼"
                         : nav === "my"
                           ? "自分の依頼"
                           : nav === "calendar"
@@ -1151,6 +1596,10 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                         ? "ギルド内の行動記録 · Realtime同期"
                         : nav === "settings"
                           ? `操作中の冒険者 ${selectedPlayer || "未選択"}`
+                          : nav === "notebook"
+                            ? `冒険者手帳 · ${selectedPlayerTasks.length}件の記録`
+                            : nav === "notices"
+                              ? `受信 ${receivedGuildRequests.length}件 · 気付き ${relevantNotices.length}件`
                           : nav === "calendar"
                             ? `${formatCalendarMonth(calendarMonth)} · ${calendarEvents.length}件`
                           : nav === "expedition"
@@ -1180,19 +1629,55 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                     </div>
                     <button
                       type="button"
-                      onClick={() => setModal({ type: "create" })}
+                      onClick={() => setTaskForm({ type: "create" })}
                       disabled={boardDisabled}
                       className="quest-btn-primary hidden lg:inline-flex min-h-11 px-4 text-sm disabled:opacity-50"
                     >
-                      依頼を掲示
+                      任務を記す
                     </button>
                   </div>
                 </div>
               </div>
             </div>
 
-            {loading ? (
+            {loading || tasksLoading ? (
               <LoadingBoard />
+            ) : nav === "notebook" ? (
+              <TaskNotebookPanel
+                tasks={visibleTasks}
+                selectedPlayer={selectedPlayer}
+                dashboard={taskDashboard}
+                calendarEventById={calendarEventById}
+                questById={new Map(quests.map((quest) => [quest.id, quest]))}
+                busy={busy || !isOnline}
+                onCreate={() => setTaskForm({ type: "create" })}
+                onEdit={(taskId) => setTaskForm({ type: "edit", taskId })}
+                onOpenDetail={(taskId) =>
+                  setTaskDetail({ type: "open", taskId })
+                }
+                onDelegate={handleDelegateTask}
+                onComplete={handleCompleteTask}
+                onOpenQuest={(questId) => setDetail({ type: "open", questId })}
+                onOpenCalendar={(eventId) =>
+                  setCalendarDetail({ type: "open", eventId })
+                }
+                onOpenNotices={() => setNav("notices")}
+                onOpenRequestForm={(requestType, taskId) =>
+                  setGuildRequestForm({ type: "open", requestType, taskId })
+                }
+                canIssueDirective={isGuildOfficer}
+              />
+            ) : nav === "notices" ? (
+              <GuildNoticesPanel
+                notices={relevantNotices}
+                requests={receivedGuildRequests}
+                selectedPlayer={selectedPlayer}
+                loading={guildOperationsLoading}
+                busy={busy}
+                onDismissNotice={handleDismissNotice}
+                onAcceptRequest={handleAcceptGuildRequest}
+                onRejectRequest={handleRejectGuildRequest}
+              />
             ) : nav === "calendar" ? (
               <CalendarPanel
                 events={calendarEvents}
@@ -1237,9 +1722,12 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                 completedCount={completedHistory.length}
                 openCount={openCount}
                 guildProgress={guildProgress}
+                noticeCount={relevantNotices.length}
+                requestCount={receivedGuildRequests.length}
                 completedLog={sortedCompleted}
                 activityLogs={logs}
                 logsLoading={logsLoading}
+                onOpenNotices={() => setNav("notices")}
                 onReopen={(id) => setReopen({ type: "open", questId: id })}
                 onDeleteCompleted={(id) =>
                   setConfirm({ type: "delete", questId: id })
@@ -1397,10 +1885,11 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
         </div>
 
         <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 px-2 pb-[calc(env(safe-area-inset-bottom)+0.35rem)]">
-          <div className="rpg-frame grid grid-cols-5 max-w-lg mx-auto bg-[var(--color-panel)]">
+          <div className="rpg-frame grid grid-cols-6 max-w-lg mx-auto bg-[var(--color-panel)]">
             {(
               [
-                { id: "board" as NavId, icon: "📜", label: "クエスト" },
+                { id: "notebook" as NavId, icon: "📔", label: "手帳" },
+                { id: "board" as NavId, icon: "📜", label: "依頼" },
                 { id: "my" as NavId, icon: "⚔️", label: "自分" },
                 { id: "calendar" as NavId, icon: "📅", label: "暦" },
                 { id: "stats" as NavId, icon: "🏰", label: "ギルド" },
@@ -1438,16 +1927,86 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
         </nav>
       </div>
 
+      <TaskFormModal
+        open={taskForm.type !== "closed"}
+        mode={taskForm.type === "edit" ? "edit" : "create"}
+        initial={editingTask}
+        defaults={taskForm.type === "create" ? taskForm.defaults : undefined}
+        selectedPlayer={selectedPlayer}
+        calendarEvents={calendarEvents}
+        submitting={busy}
+        onClose={() => setTaskForm({ type: "closed" })}
+        onSubmit={handleSubmitTask}
+      />
+
       <QuestFormModal
         open={modal.type !== "closed"}
-        mode={modal.type === "edit" ? "edit" : "create"}
+        mode="edit"
         initial={editingQuest}
         staff={staff}
         selectedPlayer={selectedPlayer}
         calendarEvents={calendarEvents}
         onClose={() => setModal({ type: "closed" })}
-        onSubmit={modal.type === "edit" ? handleEditQuest : handleCreateQuest}
+        onSubmit={handleEditQuest}
         submitting={busy}
+      />
+
+      <TaskDetailModal
+        task={detailTask}
+        relatedEvent={
+          detailTask?.calendarEventId
+            ? calendarEventById.get(detailTask.calendarEventId) ?? null
+            : null
+        }
+        relatedQuest={
+          detailTask?.questId ? findQuest(detailTask.questId) ?? null : null
+        }
+        disabled={busy}
+        onClose={() => setTaskDetail({ type: "closed" })}
+        onEdit={(taskId) => {
+          setTaskDetail({ type: "closed" });
+          setTaskForm({ type: "edit", taskId });
+        }}
+        onDelete={handleDeleteTask}
+        onDelegate={handleDelegateTask}
+        onComplete={handleCompleteTask}
+        onOpenQuest={(questId) => {
+          setTaskDetail({ type: "closed" });
+          setDetail({ type: "open", questId });
+        }}
+        onOpenEvent={(eventId) => {
+          setTaskDetail({ type: "closed" });
+          setCalendarDetail({ type: "open", eventId });
+        }}
+      />
+
+      <GuildRequestFormModal
+        open={guildRequestForm.type === "open"}
+        requestType={
+          guildRequestForm.type === "open"
+            ? guildRequestForm.requestType
+            : "suggestion"
+        }
+        sourceTask={guildRequestSourceTask}
+        staff={staff}
+        selectedPlayer={selectedPlayer}
+        calendarEvents={calendarEvents}
+        canIssueDirective={isGuildOfficer}
+        submitting={busy}
+        onClose={() => setGuildRequestForm({ type: "closed" })}
+        onSubmit={handleSubmitGuildRequest}
+      />
+
+      <EmergencyReportModal
+        open={urgentReport.shouldShow}
+        overdueCount={urgentReport.overdue.length}
+        dueSoonCount={urgentReport.dueSoon.length}
+        onClose={() => setUrgentReportSeen(true)}
+        onOpenNotices={() => {
+          setUrgentReportSeen(true);
+          setNav("notices");
+          setMobilePanel("quests");
+        }}
       />
 
       <CalendarEventFormModal
@@ -1468,6 +2027,11 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
 
       <CalendarEventDetailModal
         event={detailCalendarEvent}
+        relatedTasks={
+          detailCalendarEvent
+            ? getRelatedTasksForEvent(detailCalendarEvent, adventurerTasks)
+            : []
+        }
         relatedQuests={
           detailCalendarEvent
             ? getRelatedQuestsForEvent(detailCalendarEvent, quests)
@@ -1477,6 +2041,19 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
         onClose={() => setCalendarDetail({ type: "closed" })}
         onEdit={(eventId) => setCalendarForm({ type: "edit", eventId })}
         onDelete={handleDeleteCalendarEvent}
+        onCreateTask={(event) => {
+          setCalendarDetail({ type: "closed" });
+          setTaskForm({
+            type: "create",
+            defaults: {
+              title: event.title,
+              description: event.description,
+              dueDate: event.eventDate,
+              calendarEventId: event.id,
+              importance: event.importance,
+            },
+          });
+        }}
       />
 
       <ConfirmModal
@@ -2069,6 +2646,1328 @@ function DetailCell({
   );
 }
 
+function TaskNotebookPanel({
+  tasks,
+  selectedPlayer,
+  dashboard,
+  calendarEventById,
+  questById,
+  busy,
+  onCreate,
+  onEdit,
+  onOpenDetail,
+  onDelegate,
+  onComplete,
+  onOpenQuest,
+  onOpenCalendar,
+  onOpenNotices,
+  onOpenRequestForm,
+  canIssueDirective: canUseDirective,
+}: {
+  tasks: AdventurerTask[];
+  selectedPlayer: string;
+  dashboard: {
+    today: number;
+    dueSoon: number;
+    delegated: number;
+    receivedRequests: number;
+    receivedSuggestions: number;
+    directives: number;
+    expeditionReturns: number;
+    unclaimedRewards: number;
+  };
+  calendarEventById: ReadonlyMap<number, CalendarEvent>;
+  questById: ReadonlyMap<number, Quest>;
+  busy: boolean;
+  onCreate: () => void;
+  onEdit: (taskId: number) => void;
+  onOpenDetail: (taskId: number) => void;
+  onDelegate: (taskId: number) => void;
+  onComplete: (taskId: number) => void;
+  onOpenQuest: (questId: number) => void;
+  onOpenCalendar: (eventId: number) => void;
+  onOpenNotices: () => void;
+  onOpenRequestForm: (requestType: GuildRequestType, taskId: number) => void;
+  canIssueDirective: boolean;
+}) {
+  const [tab, setTab] = useState<AdventurerTaskTab>("today");
+  const activeTasks = useMemo(
+    () => tasks.filter((task) => task.status !== "completed"),
+    [tasks],
+  );
+  const taskCounts = useMemo(() => {
+    return {
+      today: filterTasksByTab(activeTasks, "today").length,
+      week: filterTasksByTab(activeTasks, "week").length,
+      month: filterTasksByTab(activeTasks, "month").length,
+      future: filterTasksByTab(activeTasks, "future").length,
+    };
+  }, [activeTasks]);
+  const visibleTasks = useMemo(
+    () => sortAdventurerTasks(filterTasksByTab(activeTasks, tab)),
+    [activeTasks, tab],
+  );
+
+  const stats = [
+    { label: "本日の任務", value: dashboard.today, tone: "gold" },
+    { label: "期限間近", value: dashboard.dueSoon, tone: "red" },
+    { label: "依頼中", value: dashboard.delegated, tone: "purple" },
+    { label: "受信依頼", value: dashboard.receivedRequests, tone: "blue" },
+    { label: "受信助言", value: dashboard.receivedSuggestions, tone: "green" },
+    { label: "ギルド指令", value: dashboard.directives, tone: "red" },
+    { label: "遠征帰還", value: dashboard.expeditionReturns, tone: "blue" },
+    { label: "未受領報酬", value: dashboard.unclaimedRewards, tone: "green" },
+  ];
+
+  return (
+    <section className="notebook-panel min-h-0 flex-1 overflow-hidden flex flex-col gap-2">
+      <div className="rpg-frame notebook-cover p-2.5 sm:p-3 shrink-0">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="min-w-0">
+            <p className="font-[family-name:var(--font-display)] text-[10px] tracking-[0.22em] text-[var(--color-gold)]/80">
+              ADVENTURER NOTEBOOK
+            </p>
+            <h3 className="pixel-window-title mt-1 text-base sm:text-lg font-semibold">
+              本日の任務
+            </h3>
+            <p className="mt-1 text-xs text-slate-500 truncate">
+              {selectedPlayer || "冒険者"} の手帳から、必要な任務だけをギルド依頼にします。
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onCreate}
+            disabled={busy}
+            className="quest-btn-primary min-h-11 px-3 text-xs disabled:opacity-45"
+          >
+            任務を記す
+          </button>
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+          {stats.map((stat) => (
+            <button
+              type="button"
+              key={stat.label}
+              onClick={
+                stat.label === "受信依頼" ||
+                stat.label === "受信助言" ||
+                stat.label === "ギルド指令"
+                  ? onOpenNotices
+                  : undefined
+              }
+              className={`notebook-stat notebook-stat-${stat.tone} border-2 bg-black/25 px-2 py-2 text-center shadow-[2px_2px_0_#000]`}
+            >
+              <p className="text-[9px] text-slate-500 truncate">{stat.label}</p>
+              <p className="pixel-title mt-1 text-base text-[var(--color-gold-bright)]">
+                {stat.value}
+              </p>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="quick-filter-bar shrink-0 -mx-3 lg:-mx-0 px-3 lg:px-0 py-1 bg-[#17101a] border-y-2 border-[#fff4c4]/35">
+        <div className="flex gap-1.5 overflow-x-auto custom-scroll" role="tablist" aria-label="手帳タブ">
+          {(Object.keys(TASK_TAB_LABELS) as AdventurerTaskTab[]).map((item) => {
+            const selected = tab === item;
+            return (
+              <button
+                key={item}
+                type="button"
+                onClick={() => setTab(item)}
+                aria-pressed={selected}
+                className={`pixel-chip min-h-11 shrink-0 px-2.5 text-[11px] font-semibold transition-all ${
+                  selected
+                    ? "bg-[var(--color-gold-bright)] text-[#17101a]"
+                    : "bg-black/80 text-slate-300 hover:text-[var(--color-gold-bright)]"
+                }`}
+              >
+                {TASK_TAB_LABELS[item]}
+                <span className="ml-1.5 text-[10px] text-slate-400">
+                  {taskCounts[item]}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className={`notebook-task-list min-h-0 flex-1 overflow-y-auto custom-scroll pr-1 pb-20 lg:pb-1 ${busy ? "opacity-80 pointer-events-none" : ""}`}>
+        {visibleTasks.length === 0 ? (
+          <div className="rpg-frame p-5 text-center">
+            <p className="text-3xl">📔</p>
+            <h4 className="pixel-window-title mt-3 text-base font-semibold">
+              手帳は静かです
+            </h4>
+            <p className="mt-2 text-sm text-slate-500">
+              この期間の任務はありません。必要な作業を任務として記録できます。
+            </p>
+            <button
+              type="button"
+              onClick={onCreate}
+              disabled={busy}
+              className="quest-btn-primary mt-4 min-h-11 px-4 text-sm disabled:opacity-45"
+            >
+              任務を記す
+            </button>
+          </div>
+        ) : (
+          <div className="grid gap-2">
+            {visibleTasks.map((task) => (
+              <TaskCard
+                key={task.id}
+                task={task}
+                relatedEvent={
+                  task.calendarEventId
+                    ? calendarEventById.get(task.calendarEventId) ?? null
+                    : null
+                }
+                relatedQuest={task.questId ? questById.get(task.questId) ?? null : null}
+                busy={busy}
+                onEdit={onEdit}
+                onOpenDetail={onOpenDetail}
+                onDelegate={onDelegate}
+                onComplete={onComplete}
+                onOpenQuest={onOpenQuest}
+                onOpenCalendar={onOpenCalendar}
+                onOpenRequestForm={onOpenRequestForm}
+                canIssueDirective={canUseDirective}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function TaskCard({
+  task,
+  relatedEvent,
+  relatedQuest,
+  busy,
+  onEdit,
+  onOpenDetail,
+  onDelegate,
+  onComplete,
+  onOpenQuest,
+  onOpenCalendar,
+  onOpenRequestForm,
+  canIssueDirective: canUseDirective,
+}: {
+  task: AdventurerTask;
+  relatedEvent: CalendarEvent | null;
+  relatedQuest: Quest | null;
+  busy: boolean;
+  onEdit: (taskId: number) => void;
+  onOpenDetail: (taskId: number) => void;
+  onDelegate: (taskId: number) => void;
+  onComplete: (taskId: number) => void;
+  onOpenQuest: (questId: number) => void;
+  onOpenCalendar: (eventId: number) => void;
+  onOpenRequestForm: (requestType: GuildRequestType, taskId: number) => void;
+  canIssueDirective: boolean;
+}) {
+  const score = getTaskScore(task);
+  const dueTone = getTaskDueTone(task);
+  const disabled = busy || task.status === "completed";
+
+  return (
+    <article className={`task-note-card task-due-${dueTone} p-2.5 sm:p-3`}>
+      <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_14rem] lg:items-center">
+        <div className="min-w-0">
+          <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+            <span className={`task-status-badge task-status-${task.status}`}>
+              {TASK_STATUS_LABELS[task.status]}
+            </span>
+            <span className="calendar-tag">依頼ランク {score}</span>
+            <span className={`calendar-tag ${dueTone === "overdue" || dueTone === "today" ? "is-danger" : ""}`}>
+              {getTaskDueLabel(task)}
+            </span>
+            {task.isPublic && <span className="calendar-tag">公開</span>}
+            {relatedEvent && (
+              <button
+                type="button"
+                onClick={() => onOpenCalendar(relatedEvent.id)}
+                className="calendar-tag hover:text-[var(--color-gold-bright)]"
+              >
+                📅 関連予定
+              </button>
+            )}
+          </div>
+          <h4 className="pixel-title truncate text-base text-slate-100">
+            {task.title}
+          </h4>
+          <p className="mt-1 text-[11px] text-slate-500">
+            持ち主: {task.ownerName} / 緊急 {renderScoreGems(task.priority)} / 重要 {renderScoreGems(task.importance)}
+          </p>
+          {task.description && (
+            <p className="mt-1 line-clamp-1 text-xs text-slate-400">
+              {task.description}
+            </p>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 gap-1.5 lg:grid-cols-1">
+          {task.status === "delegated" && relatedQuest ? (
+            <button
+              type="button"
+              onClick={() => onOpenQuest(relatedQuest.id)}
+              disabled={busy}
+              className="quest-btn-primary min-h-11 text-xs disabled:opacity-45"
+            >
+              依頼を見る
+            </button>
+          ) : task.status === "completed" ? (
+            <button
+              type="button"
+              disabled
+              className="quest-btn-secondary min-h-11 text-xs opacity-50"
+            >
+              達成済み
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onComplete(task.id)}
+              disabled={disabled}
+              className="quest-btn-primary min-h-11 text-xs disabled:opacity-45"
+            >
+              任務完了
+            </button>
+          )}
+          {task.status !== "completed" && task.status !== "delegated" ? (
+            <button
+              type="button"
+              onClick={() => onDelegate(task.id)}
+              disabled={busy}
+              className="quest-btn-ghost min-h-11 text-xs disabled:opacity-45"
+            >
+              ギルドへ依頼
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onOpenDetail(task.id)}
+              disabled={busy}
+              className="quest-btn-ghost min-h-11 text-xs disabled:opacity-45"
+            >
+              詳細
+            </button>
+          )}
+          {task.status !== "completed" && (
+            <button
+              type="button"
+              onClick={() => onOpenRequestForm("suggestion", task.id)}
+              disabled={busy}
+              className="quest-btn-ghost min-h-11 text-xs disabled:opacity-45"
+            >
+              助言する
+            </button>
+          )}
+          {task.status !== "completed" && (
+            <button
+              type="button"
+              onClick={() => onOpenRequestForm("assignment", task.id)}
+              disabled={busy}
+              className="quest-btn-ghost min-h-11 text-xs disabled:opacity-45"
+            >
+              指名依頼
+            </button>
+          )}
+          {canUseDirective && task.status !== "completed" && (
+            <button
+              type="button"
+              onClick={() => onOpenRequestForm("directive", task.id)}
+              disabled={busy}
+              className="quest-btn-ghost min-h-11 border-red-400/70 text-red-200 disabled:opacity-45"
+            >
+              ギルド指令
+            </button>
+          )}
+          {task.status !== "completed" && task.status !== "delegated" && (
+            <button
+              type="button"
+              onClick={() => onOpenDetail(task.id)}
+              disabled={busy}
+              className="quest-btn-ghost min-h-11 text-xs disabled:opacity-45"
+            >
+              詳細
+            </button>
+          )}
+          {task.status !== "completed" && task.status !== "delegated" && (
+            <button
+              type="button"
+              onClick={() => onEdit(task.id)}
+              disabled={busy}
+              className="quest-btn-ghost min-h-11 text-xs disabled:opacity-45"
+            >
+              編集
+            </button>
+          )}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function TaskFormModal({
+  open,
+  mode,
+  initial,
+  defaults,
+  selectedPlayer,
+  calendarEvents,
+  submitting,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  mode: "create" | "edit";
+  initial: AdventurerTask | null;
+  defaults?: Partial<AdventurerTaskFormData>;
+  selectedPlayer: string;
+  calendarEvents: CalendarEvent[];
+  submitting: boolean;
+  onClose: () => void;
+  onSubmit: (data: AdventurerTaskFormData) => void;
+}) {
+  const [form, setForm] = useState<AdventurerTaskFormData>(EMPTY_TASK_FORM);
+  const [error, setError] = useState<string | null>(null);
+
+  const eventOptions = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return [...calendarEvents].sort((a, b) => {
+      const aFuture = a.eventDate >= today ? 0 : 1;
+      const bFuture = b.eventDate >= today ? 0 : 1;
+      if (aFuture !== bFuture) return aFuture - bFuture;
+      const date = a.eventDate.localeCompare(b.eventDate);
+      if (date !== 0) return date;
+      return (a.startTime || "99:99").localeCompare(b.startTime || "99:99");
+    });
+  }, [calendarEvents]);
+
+  useEffect(() => {
+    if (!open) return;
+    setForm(
+      mode === "edit" && initial
+        ? taskToForm(initial)
+        : { ...EMPTY_TASK_FORM, ...defaults },
+    );
+    setError(null);
+  }, [open, mode, initial, defaults]);
+
+  if (!open) return null;
+
+  const update = <K extends keyof AdventurerTaskFormData>(
+    key: K,
+    value: AdventurerTaskFormData[K],
+  ) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+    if (error) setError(null);
+  };
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (submitting) return;
+    if (!form.title.trim()) {
+      setError("任務名を入力してください");
+      return;
+    }
+    onSubmit({
+      ...form,
+      title: form.title.trim(),
+      description: form.description.trim(),
+    });
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[67] flex items-end justify-center p-0 sm:items-center sm:p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="task-form-title"
+    >
+      <button
+        type="button"
+        className="modal-backdrop absolute inset-0 bg-black/80"
+        aria-label="任務フォームを閉じる"
+        onClick={submitting ? undefined : onClose}
+      />
+      <section className="modal-panel relative rpg-frame max-h-[92dvh] w-full max-w-2xl overflow-y-auto custom-scroll p-5">
+        <header className="border-b-2 border-[var(--color-gold)]/30 pb-3">
+          <p className="font-[family-name:var(--font-display)] text-[10px] tracking-[0.22em] text-[var(--color-gold)]/80">
+            ADVENTURER NOTEBOOK
+          </p>
+          <h2 id="task-form-title" className="pixel-window-title mt-1 text-xl font-bold">
+            {mode === "create" ? "任務を記す" : "任務を編集"}
+          </h2>
+          <p className="mt-1 text-xs text-slate-500">
+            持ち主: {initial?.ownerName ?? selectedPlayer}
+          </p>
+        </header>
+
+        <form onSubmit={handleSubmit} className="mt-4 grid gap-3">
+          <label className="block">
+            <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">
+              任務名 *
+            </span>
+            <input
+              value={form.title}
+              onChange={(event) => update("title", event.target.value)}
+              disabled={submitting}
+              className="quest-input mt-1.5"
+              placeholder="例: 景品補充"
+            />
+          </label>
+
+          <label>
+            <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">
+              説明
+            </span>
+            <textarea
+              value={form.description}
+              onChange={(event) => update("description", event.target.value)}
+              disabled={submitting}
+              rows={3}
+              className="quest-input mt-1.5 resize-none"
+              placeholder="作業内容や注意点..."
+            />
+          </label>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <TaskScoreInput
+              label="緊急度"
+              value={form.priority}
+              onChange={(value) => update("priority", value)}
+              disabled={submitting}
+            />
+            <TaskScoreInput
+              label="重要度"
+              value={form.importance}
+              onChange={(value) => update("importance", value)}
+              disabled={submitting}
+            />
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label>
+              <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">
+                納期
+              </span>
+              <input
+                type="date"
+                value={form.dueDate}
+                onChange={(event) => update("dueDate", event.target.value)}
+                disabled={submitting}
+                className="quest-input mt-1.5"
+              />
+            </label>
+            <label>
+              <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">
+                関連予定
+              </span>
+              <select
+                value={form.calendarEventId ?? ""}
+                onChange={(event) =>
+                  update(
+                    "calendarEventId",
+                    event.target.value ? Number(event.target.value) : null,
+                  )
+                }
+                disabled={submitting}
+                className="quest-input mt-1.5"
+              >
+                <option value="">関連する予定を選択</option>
+                {eventOptions.map((event) => (
+                  <option key={event.id} value={event.id}>
+                    {formatCalendarDate(event.eventDate)} {formatEventTime(event)} [{EVENT_TYPE_LABELS[event.eventType]}] {event.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <label className="flex min-h-11 items-center gap-3 border-2 border-white/15 bg-black/20 px-3 py-2 shadow-[3px_3px_0_#000]">
+            <input
+              type="checkbox"
+              checked={form.isPublic}
+              onChange={(event) => update("isPublic", event.target.checked)}
+              disabled={submitting}
+              className="h-5 w-5 accent-[var(--color-gold-bright)]"
+            />
+            <span className="min-w-0">
+              <span className="block text-sm text-slate-100">公開設定</span>
+              <span className="block text-[11px] text-slate-500">
+                ONにするとギルド全体から見える任務になります。
+              </span>
+            </span>
+          </label>
+
+          <div className="border-2 border-[var(--color-gold)]/45 bg-black/30 px-3 py-2 text-xs text-slate-400 shadow-[3px_3px_0_#000]">
+            依頼ランク:{" "}
+            <span className="text-[var(--color-gold-bright)] font-bold">
+              {form.priority * form.importance}
+            </span>
+            <span className="ml-2 text-slate-500">
+              緊急度 × 重要度で自動計算されます
+            </span>
+          </div>
+
+          {error && (
+            <p className="border-2 border-red-400/55 bg-red-500/10 px-3 py-2 text-sm text-red-200 shadow-[3px_3px_0_#000]">
+              {error}
+            </p>
+          )}
+
+          <footer className="grid gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={submitting}
+              className="quest-btn-secondary disabled:opacity-45"
+            >
+              キャンセル
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="quest-btn-primary disabled:opacity-45"
+            >
+              {mode === "create" ? "手帳に記す" : "保存する"}
+            </button>
+          </footer>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function TaskDetailModal({
+  task,
+  relatedEvent,
+  relatedQuest,
+  disabled,
+  onClose,
+  onEdit,
+  onDelete,
+  onDelegate,
+  onComplete,
+  onOpenQuest,
+  onOpenEvent,
+}: {
+  task: AdventurerTask | null;
+  relatedEvent: CalendarEvent | null;
+  relatedQuest: Quest | null;
+  disabled: boolean;
+  onClose: () => void;
+  onEdit: (taskId: number) => void;
+  onDelete: (taskId: number) => void;
+  onDelegate: (taskId: number) => void;
+  onComplete: (taskId: number) => void;
+  onOpenQuest: (questId: number) => void;
+  onOpenEvent: (eventId: number) => void;
+}) {
+  if (!task) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[68] flex items-end justify-center p-0 sm:items-center sm:p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="task-detail-title"
+    >
+      <button
+        type="button"
+        className="modal-backdrop absolute inset-0 bg-black/80"
+        aria-label="任務詳細を閉じる"
+        onClick={disabled ? undefined : onClose}
+      />
+      <section className="modal-panel relative rpg-frame max-h-[92dvh] w-full max-w-2xl overflow-y-auto custom-scroll p-5">
+        <header className="border-b-2 border-[var(--color-gold)]/30 pb-3">
+          <div className="mb-2 flex flex-wrap gap-1">
+            <span className={`task-status-badge task-status-${task.status}`}>
+              {TASK_STATUS_LABELS[task.status]}
+            </span>
+            <span className="calendar-tag">依頼ランク {getTaskScore(task)}</span>
+            <span className="calendar-tag">{getTaskDueLabel(task)}</span>
+          </div>
+          <h2 id="task-detail-title" className="pixel-window-title text-xl font-bold">
+            {task.title}
+          </h2>
+          <p className="mt-2 text-sm text-slate-400">
+            持ち主: {task.ownerName} / 緊急 {task.priority} / 重要 {task.importance}
+          </p>
+        </header>
+
+        <section className="mt-4 border-2 border-white/15 bg-black/20 p-3 shadow-[3px_3px_0_#000]">
+          <h3 className="pixel-title text-sm text-[var(--color-gold-bright)]">
+            任務内容
+          </h3>
+          <p className="mt-2 text-sm leading-6 text-slate-300">
+            {task.description || "説明はありません。"}
+          </p>
+        </section>
+
+        {relatedEvent && (
+          <section className="mt-4 border-2 border-[var(--color-gold)]/35 bg-black/20 p-3 shadow-[3px_3px_0_#000]">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="pixel-title text-sm text-[var(--color-gold-bright)]">
+                  関連予定
+                </h3>
+                <p className="mt-2 text-sm text-slate-300">{relatedEvent.title}</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {formatCalendarDate(relatedEvent.eventDate)} / {formatEventTime(relatedEvent)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onOpenEvent(relatedEvent.id)}
+                disabled={disabled}
+                className="quest-btn-ghost min-h-11 px-3 text-xs disabled:opacity-45"
+              >
+                予定詳細
+              </button>
+            </div>
+          </section>
+        )}
+
+        {relatedQuest && (
+          <section className="mt-4 border-2 border-[var(--color-gold)]/35 bg-black/20 p-3 shadow-[3px_3px_0_#000]">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="pixel-title text-sm text-[var(--color-gold-bright)]">
+                  関連依頼
+                </h3>
+                <p className="mt-2 text-sm text-slate-300">{relatedQuest.title}</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  状態: {relatedQuest.status} / 依頼ランク {getPriorityScore(relatedQuest)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onOpenQuest(relatedQuest.id)}
+                disabled={disabled}
+                className="quest-btn-ghost min-h-11 px-3 text-xs disabled:opacity-45"
+              >
+                依頼詳細
+              </button>
+            </div>
+          </section>
+        )}
+
+        <footer className="mt-5 grid gap-2 sm:grid-cols-4">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={disabled}
+            className="quest-btn-secondary disabled:opacity-45"
+          >
+            戻る
+          </button>
+          {task.status !== "completed" && task.status !== "delegated" && (
+            <>
+              <button
+                type="button"
+                onClick={() => onComplete(task.id)}
+                disabled={disabled}
+                className="quest-btn-primary disabled:opacity-45"
+              >
+                任務完了
+              </button>
+              <button
+                type="button"
+                onClick={() => onDelegate(task.id)}
+                disabled={disabled}
+                className="quest-btn-ghost disabled:opacity-45"
+              >
+                ギルドへ依頼
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            onClick={() => onEdit(task.id)}
+            disabled={disabled || task.status === "completed"}
+            className="quest-btn-ghost disabled:opacity-45"
+          >
+            編集
+          </button>
+          <button
+            type="button"
+            onClick={() => onDelete(task.id)}
+            disabled={disabled}
+            className="quest-btn-ghost border-red-400/70 text-red-200 disabled:opacity-45"
+          >
+            削除
+          </button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+function GuildRequestFormModal({
+  open,
+  requestType,
+  sourceTask,
+  staff,
+  selectedPlayer,
+  calendarEvents,
+  canIssueDirective: canUseDirective,
+  submitting,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  requestType: GuildRequestType;
+  sourceTask: AdventurerTask | null;
+  staff: PartyMember[];
+  selectedPlayer: string;
+  calendarEvents: CalendarEvent[];
+  canIssueDirective: boolean;
+  submitting: boolean;
+  onClose: () => void;
+  onSubmit: (data: GuildRequestFormData) => void;
+}) {
+  const [form, setForm] = useState<GuildRequestFormData>({
+    requestType,
+    toPlayer: "",
+    taskTitle: "",
+    taskDescription: "",
+    priority: 3,
+    importance: 3,
+    dueDate: "",
+    calendarEventId: null,
+  });
+  const [error, setError] = useState<string | null>(null);
+
+  const activeStaff = useMemo(
+    () => staff.filter((member) => member.isActive !== false),
+    [staff],
+  );
+  const targetStaff = activeStaff.filter((member) => member.name !== selectedPlayer);
+
+  const eventOptions = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return [...calendarEvents].sort((a, b) => {
+      const aFuture = a.eventDate >= today ? 0 : 1;
+      const bFuture = b.eventDate >= today ? 0 : 1;
+      if (aFuture !== bFuture) return aFuture - bFuture;
+      return a.eventDate.localeCompare(b.eventDate);
+    });
+  }, [calendarEvents]);
+
+  useEffect(() => {
+    if (!open) return;
+    setForm({
+      requestType,
+      toPlayer: requestType === "directive" ? "__all__" : "",
+      taskTitle: sourceTask?.title ?? "",
+      taskDescription: sourceTask?.description ?? "",
+      priority: sourceTask?.priority ?? 3,
+      importance: sourceTask?.importance ?? 3,
+      dueDate: sourceTask?.dueDate ?? "",
+      calendarEventId: sourceTask?.calendarEventId ?? null,
+    });
+    setError(null);
+  }, [open, requestType, sourceTask]);
+
+  if (!open) return null;
+
+  const update = <K extends keyof GuildRequestFormData>(
+    key: K,
+    value: GuildRequestFormData[K],
+  ) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+    if (error) setError(null);
+  };
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (submitting) return;
+    if (requestType === "directive" && !canUseDirective) {
+      setError("ギルド指令はサブマスター以上のみ発令できます");
+      return;
+    }
+    if (!form.toPlayer) {
+      setError("対象冒険者を選択してください");
+      return;
+    }
+    if (!form.taskTitle.trim()) {
+      setError("任務名を入力してください");
+      return;
+    }
+    onSubmit({
+      ...form,
+      taskTitle: form.taskTitle.trim(),
+      taskDescription: form.taskDescription.trim(),
+    });
+  };
+
+  const title =
+    requestType === "suggestion"
+      ? "助言する"
+      : requestType === "assignment"
+        ? "指名依頼"
+        : "ギルド指令";
+  const subtitle =
+    requestType === "suggestion"
+      ? "提案は相手の承認後に手帳へ追加されます。"
+      : requestType === "assignment"
+        ? "承認後、手帳追加と依頼書化まで進みます。"
+        : "管理者権限で対象者の手帳へ即時追加されます。";
+
+  return (
+    <div
+      className="fixed inset-0 z-[69] flex items-end justify-center p-0 sm:items-center sm:p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="guild-request-form-title"
+    >
+      <button
+        type="button"
+        className="modal-backdrop absolute inset-0 bg-black/80"
+        aria-label="提案フォームを閉じる"
+        onClick={submitting ? undefined : onClose}
+      />
+      <section className={`modal-panel guild-request-modal guild-request-${getRequestTone(requestType)} relative rpg-frame max-h-[92dvh] w-full max-w-2xl overflow-y-auto custom-scroll p-5`}>
+        <header className="border-b-2 border-[var(--color-gold)]/30 pb-3">
+          <p className="font-[family-name:var(--font-display)] text-[10px] tracking-[0.22em] text-[var(--color-gold)]/80">
+            GUILD OPERATION
+          </p>
+          <h2 id="guild-request-form-title" className="pixel-window-title mt-1 text-xl font-bold">
+            {title}
+          </h2>
+          <p className="mt-1 text-xs text-slate-500">{subtitle}</p>
+        </header>
+
+        <form onSubmit={handleSubmit} className="mt-4 grid gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label>
+              <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">
+                対象冒険者 *
+              </span>
+              <select
+                value={form.toPlayer}
+                onChange={(event) => update("toPlayer", event.target.value)}
+                disabled={submitting}
+                className="quest-input mt-1.5"
+              >
+                <option value="">対象を選択</option>
+                {requestType === "directive" && (
+                  <option value="__all__">全員</option>
+                )}
+                {targetStaff.map((member) => (
+                  <option key={member.id} value={member.name}>
+                    {member.name} Lv.{member.level}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">
+                関連予定
+              </span>
+              <select
+                value={form.calendarEventId ?? ""}
+                onChange={(event) =>
+                  update(
+                    "calendarEventId",
+                    event.target.value ? Number(event.target.value) : null,
+                  )
+                }
+                disabled={submitting}
+                className="quest-input mt-1.5"
+              >
+                <option value="">関連する予定を選択</option>
+                {eventOptions.map((event) => (
+                  <option key={event.id} value={event.id}>
+                    {formatCalendarDate(event.eventDate)} [{EVENT_TYPE_LABELS[event.eventType]}] {event.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <label>
+            <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">
+              任務名 *
+            </span>
+            <input
+              value={form.taskTitle}
+              onChange={(event) => update("taskTitle", event.target.value)}
+              disabled={submitting}
+              className="quest-input mt-1.5"
+              placeholder="例: 景品補充"
+            />
+          </label>
+
+          <label>
+            <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">
+              内容
+            </span>
+            <textarea
+              value={form.taskDescription}
+              onChange={(event) => update("taskDescription", event.target.value)}
+              disabled={submitting}
+              rows={3}
+              className="quest-input mt-1.5 resize-none"
+              placeholder="提案理由や依頼内容..."
+            />
+          </label>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <TaskScoreInput
+              label="緊急度"
+              value={form.priority}
+              onChange={(value) => update("priority", value)}
+              disabled={submitting}
+            />
+            <TaskScoreInput
+              label="重要度"
+              value={form.importance}
+              onChange={(value) => update("importance", value)}
+              disabled={submitting}
+            />
+            <label>
+              <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">
+                納期
+              </span>
+              <input
+                type="date"
+                value={form.dueDate}
+                onChange={(event) => update("dueDate", event.target.value)}
+                disabled={submitting}
+                className="quest-input mt-1.5"
+              />
+            </label>
+          </div>
+
+          {error && (
+            <p className="border-2 border-red-400/55 bg-red-500/10 px-3 py-2 text-sm text-red-200 shadow-[3px_3px_0_#000]">
+              {error}
+            </p>
+          )}
+
+          <footer className="grid gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={submitting}
+              className="quest-btn-secondary disabled:opacity-45"
+            >
+              キャンセル
+            </button>
+            <button
+              type="submit"
+              disabled={submitting || (requestType === "directive" && !canUseDirective)}
+              className="quest-btn-primary disabled:opacity-45"
+            >
+              {requestType === "suggestion"
+                ? "助言を送る"
+                : requestType === "assignment"
+                  ? "指名依頼を送る"
+                  : "指令を発令"}
+            </button>
+          </footer>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function GuildNoticesPanel({
+  notices,
+  requests,
+  selectedPlayer,
+  loading,
+  busy,
+  onDismissNotice,
+  onAcceptRequest,
+  onRejectRequest,
+}: {
+  notices: GuildNotice[];
+  requests: GuildRequest[];
+  selectedPlayer: string;
+  loading: boolean;
+  busy: boolean;
+  onDismissNotice: (noticeId: number) => void;
+  onAcceptRequest: (request: GuildRequest) => void;
+  onRejectRequest: (request: GuildRequest) => void;
+}) {
+  if (loading) {
+    return (
+      <section className="rpg-frame min-h-0 flex-1 p-4">
+        <div className="space-y-2">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-24 animate-pulse border-2 border-white/15 bg-white/5 shadow-[2px_2px_0_#000]" />
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="notices-panel min-h-0 flex-1 overflow-hidden flex flex-col gap-2">
+      <div className="rpg-frame notice-book-cover p-3 shrink-0">
+        <p className="font-[family-name:var(--font-display)] text-[10px] tracking-[0.22em] text-[var(--color-gold)]/80">
+          NOTICE CODEX
+        </p>
+        <h3 className="pixel-window-title mt-1 text-base font-semibold">
+          気付きの書
+        </h3>
+        <p className="mt-1 text-xs text-slate-500">
+          {selectedPlayer} 宛ての助言・依頼・期限警告を確認します。
+        </p>
+      </div>
+
+      <div className={`min-h-0 flex-1 overflow-y-auto custom-scroll space-y-2 pb-20 lg:pb-1 pr-1 ${busy ? "opacity-80 pointer-events-none" : ""}`}>
+        {requests.length > 0 && (
+          <section className="rpg-frame p-3">
+            <header className="mb-3 border-b border-[var(--color-gold)]/25 pb-3">
+              <h4 className="pixel-window-title text-sm font-semibold">
+                受信した提案・依頼
+              </h4>
+            </header>
+            <div className="grid gap-2">
+              {requests.map((request) => (
+                <GuildRequestCard
+                  key={request.id}
+                  request={request}
+                  busy={busy}
+                  onAccept={onAcceptRequest}
+                  onReject={onRejectRequest}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
+        <section className="rpg-frame p-3">
+          <header className="mb-3 border-b border-[var(--color-gold)]/25 pb-3">
+            <h4 className="pixel-window-title text-sm font-semibold">
+              気付き
+            </h4>
+          </header>
+          {notices.length === 0 ? (
+            <p className="py-6 text-center text-sm text-slate-500">
+              今のところ新しい気付きはありません。
+            </p>
+          ) : (
+            <div className="grid gap-2">
+              {notices.map((notice) => (
+                <GuildNoticeCard
+                  key={notice.id}
+                  notice={notice}
+                  busy={busy}
+                  onDismiss={onDismissNotice}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function GuildNoticeCard({
+  notice,
+  busy,
+  onDismiss,
+}: {
+  notice: GuildNotice;
+  busy: boolean;
+  onDismiss: (noticeId: number) => void;
+}) {
+  return (
+    <article className={`notice-scroll-card notice-type-${notice.type} p-3`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="mb-1.5 flex flex-wrap gap-1.5">
+            <span className="calendar-tag">{NOTICE_TYPE_LABELS[notice.type]}</span>
+            {notice.targetPlayer && (
+              <span className="calendar-tag">宛先 {notice.targetPlayer}</span>
+            )}
+          </div>
+          <h4 className="pixel-title text-sm text-slate-100">{notice.title}</h4>
+          <p className="mt-1 text-xs leading-5 text-slate-400">{notice.message}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => onDismiss(notice.id)}
+          disabled={busy}
+          className="quest-btn-ghost min-h-11 shrink-0 px-3 text-xs disabled:opacity-45"
+        >
+          閉じる
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function GuildRequestCard({
+  request,
+  busy,
+  onAccept,
+  onReject,
+}: {
+  request: GuildRequest;
+  busy: boolean;
+  onAccept: (request: GuildRequest) => void;
+  onReject: (request: GuildRequest) => void;
+}) {
+  return (
+    <article className={`guild-request-card guild-request-${getRequestTone(request.requestType)} p-3`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="mb-1.5 flex flex-wrap gap-1.5">
+            <span className="calendar-tag">{REQUEST_TYPE_LABELS[request.requestType]}</span>
+            <span className="calendar-tag">{REQUEST_STATUS_LABELS[request.status]}</span>
+            <span className="calendar-tag">依頼ランク {request.priority * request.importance}</span>
+          </div>
+          <h4 className="pixel-title text-sm text-slate-100">{request.taskTitle}</h4>
+          <p className="mt-1 text-xs text-slate-500">
+            {request.fromPlayer || "ギルド"} から / 緊急 {request.priority} / 重要 {request.importance}
+            {request.dueDate ? ` / 納期 ${request.dueDate.replaceAll("-", "/")}` : ""}
+          </p>
+          {request.taskDescription && (
+            <p className="mt-2 text-xs leading-5 text-slate-400">
+              {request.taskDescription}
+            </p>
+          )}
+        </div>
+        {request.requestType === "directive" && request.status !== "pending" ? (
+          <span className="calendar-tag shrink-0 border-red-400/70 text-red-200">
+            手帳へ追加済み
+          </span>
+        ) : (
+          <div className="grid shrink-0 grid-cols-2 gap-1.5">
+            <button
+              type="button"
+              onClick={() => onAccept(request)}
+              disabled={busy}
+              className="quest-btn-primary min-h-11 px-3 text-xs disabled:opacity-45"
+            >
+              承認
+            </button>
+            <button
+              type="button"
+              onClick={() => onReject(request)}
+              disabled={busy}
+              className="quest-btn-ghost min-h-11 px-3 text-xs disabled:opacity-45"
+            >
+              却下
+            </button>
+          </div>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function EmergencyReportModal({
+  open,
+  overdueCount,
+  dueSoonCount,
+  onClose,
+  onOpenNotices,
+}: {
+  open: boolean;
+  overdueCount: number;
+  dueSoonCount: number;
+  onClose: () => void;
+  onOpenNotices: () => void;
+}) {
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[85] flex items-center justify-center bg-black/82 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="emergency-report-title"
+    >
+      <section className="modal-panel rpg-frame max-w-md w-full p-5 text-center">
+        <p className="text-4xl">⚠</p>
+        <h2 id="emergency-report-title" className="pixel-window-title mt-3 text-xl font-bold">
+          緊急報告
+        </h2>
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <div className="border-2 border-red-400/70 bg-red-500/10 p-3 shadow-[3px_3px_0_#000]">
+            <p className="text-xs text-red-200">納期切れ任務</p>
+            <p className="pixel-title mt-1 text-2xl text-red-100">{overdueCount}</p>
+          </div>
+          <div className="border-2 border-yellow-300/70 bg-yellow-500/10 p-3 shadow-[3px_3px_0_#000]">
+            <p className="text-xs text-yellow-100">期限間近</p>
+            <p className="pixel-title mt-1 text-2xl text-yellow-100">{dueSoonCount}</p>
+          </div>
+        </div>
+        <p className="mt-4 text-sm leading-6 text-slate-400">
+          気付きの書で確認し、必要なら助言・依頼で支援してください。
+        </p>
+        <div className="mt-5 grid gap-2 sm:grid-cols-2">
+          <button type="button" onClick={onOpenNotices} className="quest-btn-primary">
+            気付きの書へ
+          </button>
+          <button type="button" onClick={onClose} className="quest-btn-secondary">
+            閉じる
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function TaskScoreInput({
+  label,
+  value,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+  disabled: boolean;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between">
+        <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">
+          {label}
+        </span>
+        <span className="text-xs font-bold text-[var(--color-gold-bright)]">
+          {value}
+        </span>
+      </div>
+      <div className="mt-1.5 grid grid-cols-5 gap-1">
+        {[1, 2, 3, 4, 5].map((score) => (
+          <button
+            key={score}
+            type="button"
+            disabled={disabled}
+            onClick={() => onChange(score)}
+            className={`min-h-11 border-2 text-sm transition-all disabled:opacity-45 shadow-[2px_2px_0_#000] ${
+              score <= value
+                ? "border-[var(--color-gold-bright)] bg-[var(--color-gold)]/22 text-[var(--color-gold-bright)]"
+                : "border-white/20 bg-black/25 text-slate-600 hover:border-[var(--color-gold)]/70"
+            }`}
+          >
+            ◆
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function renderScoreGems(value: number) {
+  return `${"◆".repeat(value)}${"◇".repeat(Math.max(0, 5 - value))}`;
+}
+
 function CalendarEventFormModal({
   open,
   mode,
@@ -2326,18 +4225,22 @@ function CalendarEventFormModal({
 
 function CalendarEventDetailModal({
   event,
+  relatedTasks,
   relatedQuests,
   disabled,
   onClose,
   onEdit,
   onDelete,
+  onCreateTask,
 }: {
   event: CalendarEvent | null;
+  relatedTasks: AdventurerTask[];
   relatedQuests: Quest[];
   disabled: boolean;
   onClose: () => void;
   onEdit: (eventId: number) => void;
   onDelete: (event: CalendarEvent) => void;
+  onCreateTask: (event: CalendarEvent) => void;
 }) {
   if (!event) return null;
 
@@ -2379,6 +4282,21 @@ function CalendarEventDetailModal({
         )}
 
         <section className="mt-4 border-2 border-white/15 bg-black/20 p-3 shadow-[3px_3px_0_#000]">
+          <h3 className="pixel-title text-sm text-[var(--color-gold-bright)]">関連任務</h3>
+          {relatedTasks.length > 0 ? (
+            <div className="mt-2 grid gap-1.5">
+              {relatedTasks.map((task) => (
+                <p key={task.id} className="text-sm text-slate-300">
+                  {task.title} / {TASK_STATUS_LABELS[task.status]} / {task.ownerName}
+                </p>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-2 text-sm text-slate-500">関連任務はありません。</p>
+          )}
+        </section>
+
+        <section className="mt-4 border-2 border-white/15 bg-black/20 p-3 shadow-[3px_3px_0_#000]">
           <h3 className="pixel-title text-sm text-[var(--color-gold-bright)]">関連依頼</h3>
           {relatedQuests.length > 0 ? (
             <div className="mt-2 grid gap-1.5">
@@ -2393,9 +4311,17 @@ function CalendarEventDetailModal({
           )}
         </section>
 
-        <footer className="mt-5 grid gap-2 sm:grid-cols-3">
+        <footer className="mt-5 grid gap-2 sm:grid-cols-4">
           <button type="button" onClick={onClose} disabled={disabled} className="quest-btn-secondary disabled:opacity-45">
             戻る
+          </button>
+          <button
+            type="button"
+            onClick={() => onCreateTask(event)}
+            disabled={disabled}
+            className="quest-btn-primary disabled:opacity-45"
+          >
+            任務を追加
           </button>
           <button
             type="button"
@@ -2942,14 +4868,14 @@ function EmptyState({
     filter === "urgent"
       ? "緊急の合図は出ていません。通常クエストを落ち着いて進められます。"
       : filter === "open"
-        ? "まだ誰も挑戦していないクエストはありません。新しい依頼があれば掲示してください。"
+        ? "まだ誰も挑戦していないクエストはありません。手帳の任務から依頼化できます。"
         : filter === "succession"
           ? "現在、助っ人を募集しているクエストはありません。"
         : filter === "mine"
             ? "対応できるクエストがあれば、挑戦または継承で参加できます。"
             : nav === "my"
               ? "挑戦するか、継承者として参加してください。"
-              : "ギルドに新しい依頼を掲示できます。";
+              : "必要な作業は冒険者手帳に記し、必要に応じてギルドへ依頼できます。";
 
   return (
     <div className="rpg-frame p-5 text-center">
@@ -3250,6 +5176,13 @@ function getRelatedQuestsForEvent(event: CalendarEvent, quests: Quest[]) {
   );
 }
 
+function getRelatedTasksForEvent(
+  event: CalendarEvent,
+  tasks: AdventurerTask[],
+) {
+  return tasks.filter((task) => task.calendarEventId === event.id);
+}
+
 function ExpeditionPanel({
   resources,
   expeditions,
@@ -3465,9 +5398,12 @@ function GuildOverview({
   completedCount,
   openCount,
   guildProgress,
+  noticeCount,
+  requestCount,
   completedLog,
   activityLogs,
   logsLoading,
+  onOpenNotices,
   onReopen,
   onDeleteCompleted,
   busy,
@@ -3480,9 +5416,12 @@ function GuildOverview({
     exp: number;
     rankProgress: number;
   };
+  noticeCount: number;
+  requestCount: number;
   completedLog: CompletedQuestEntry[];
   activityLogs: QuestLog[];
   logsLoading: boolean;
+  onOpenNotices: () => void;
   onReopen: (id: number) => void;
   onDeleteCompleted: (id: number) => void;
   busy: boolean;
@@ -3509,11 +5448,20 @@ function GuildOverview({
       className={`min-h-0 flex-1 overflow-y-auto custom-scroll space-y-3 pb-20 lg:pb-1 pr-1 ${busy ? "opacity-80 pointer-events-none" : ""}`}
     >
       <section className="rpg-frame p-3 sm:p-4">
-        <header className="mb-4 pb-3 border-b border-[var(--color-gold)]/20">
-          <h3 className="pixel-window-title text-base font-semibold">ギルド進捗</h3>
-          <p className="text-xs text-slate-500 mt-1">
-            今日の達成がギルド全体の成長として見える場所です。
-          </p>
+        <header className="mb-4 flex flex-wrap items-start justify-between gap-3 pb-3 border-b border-[var(--color-gold)]/20">
+          <div>
+            <h3 className="pixel-window-title text-base font-semibold">ギルド進捗</h3>
+            <p className="text-xs text-slate-500 mt-1">
+              今日の達成がギルド全体の成長として見える場所です。
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onOpenNotices}
+            className="quest-btn-ghost min-h-11 px-3 text-xs"
+          >
+            気付きの書 {noticeCount + requestCount}
+          </button>
         </header>
         <div className="grid grid-cols-2 gap-3">
           <ProgressStat label="今日の達成クエスト数" value={`${guildProgress.completedCount}件`} />

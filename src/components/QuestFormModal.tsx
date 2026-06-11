@@ -181,12 +181,12 @@ export function QuestFormModal({
             id="quest-form-title"
             className="pixel-window-title text-xl font-bold"
           >
-            {mode === "create" ? "依頼を掲示" : "クエスト編集"}
+            {mode === "create" ? "依頼書を掲示" : "依頼書編集"}
           </h2>
           <p className="text-xs text-slate-400 mt-1">
             {mode === "create"
-              ? "ギルドボードに新しい依頼を掲示します"
-              : "掲示中のクエスト内容を更新します"}
+              ? "冒険者手帳の任務から依頼書を掲示します"
+              : "掲示中の依頼書内容を更新します"}
           </p>
         </header>
 
@@ -333,7 +333,7 @@ export function QuestFormModal({
               {submitting
               ? "掲示中..."
                 : mode === "create"
-                  ? "依頼を掲示"
+                  ? "依頼書を掲示"
                   : "保存する"}
             </button>
           </div>
