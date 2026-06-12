@@ -2394,6 +2394,60 @@ textarea:focus-visible {
   margin-top: 0.32rem;
 }
 
+.quest-priority-gauges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.24rem 0.45rem;
+  margin-top: 0.32rem;
+}
+
+.quest-priority-gauge {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.2rem;
+  border: 1px solid rgba(74, 46, 25, 0.24);
+  background: rgba(255, 244, 196, 0.22);
+  padding: 0.12rem 0.32rem;
+  color: #2b190c;
+  font-family: var(--font-pixel);
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.16);
+}
+
+.quest-priority-label {
+  color: #4a2e19;
+  font-size: 0.64rem;
+}
+
+.quest-priority-gems {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.02rem;
+  font-size: 0.78rem;
+  letter-spacing: 0;
+  text-shadow: 1px 1px 0 rgba(255, 244, 196, 0.35);
+  white-space: nowrap;
+}
+
+.quest-priority-gauge strong {
+  font-size: 0.68rem;
+}
+
+.quest-priority-urgent .is-filled {
+  color: #c23625;
+}
+
+.quest-priority-important .is-filled {
+  color: #c78c12;
+}
+
+.quest-priority-gauge .is-empty {
+  color: rgba(74, 46, 25, 0.32);
+}
+
 .quest-card-side {
   gap: 0.3rem;
 }
@@ -2530,6 +2584,21 @@ textarea:focus-visible {
 
 .latest-bulletin-card {
   padding: 0.5rem !important;
+}
+
+.latest-bulletin-card.is-primary {
+  min-height: 112px;
+  padding: 0.7rem !important;
+}
+
+.latest-bulletin-card.is-primary h3 {
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.latest-bulletin-card.is-primary p {
+  font-size: 0.72rem;
+  line-height: 1.55;
 }
 
 .modal-panel {
@@ -2675,6 +2744,28 @@ textarea:focus-visible {
   .quest-gauge-inline {
     margin-top: 0.18rem;
     font-size: 0.62rem;
+  }
+
+  .quest-priority-gauges {
+    gap: 0.18rem 0.3rem;
+    margin-top: 0.22rem;
+  }
+
+  .quest-priority-gauge {
+    gap: 0.12rem;
+    padding: 0.08rem 0.2rem;
+  }
+
+  .quest-priority-label {
+    font-size: 0.56rem;
+  }
+
+  .quest-priority-gems {
+    font-size: 0.64rem;
+  }
+
+  .quest-priority-gauge strong {
+    font-size: 0.58rem;
   }
 
   .quest-card-facts {

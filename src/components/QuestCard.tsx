@@ -133,6 +133,11 @@ export function QuestCard({
             />
           </div>
 
+          <div className="quest-priority-gauges" aria-label={`緊急度${quest.urgency}、重要度${quest.importance}`}>
+            <PriorityGauge label="緊急" value={quest.urgency} tone="urgent" />
+            <PriorityGauge label="重要" value={quest.importance} tone="important" />
+          </div>
+
           <div className="quest-party-line">
             <span className="quest-pixel-label text-[10px]">参加メンバー</span>
             {quest.participants.length === 0 ? (
@@ -282,6 +287,34 @@ function formatQuestDueAt(value: string) {
   } catch {
     return value;
   }
+}
+
+function PriorityGauge({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone: "urgent" | "important";
+}) {
+  const normalized = Math.max(0, Math.min(5, value));
+  return (
+    <div className={`quest-priority-gauge quest-priority-${tone}`}>
+      <span className="quest-priority-label">{label}</span>
+      <span className="quest-priority-gems" aria-hidden>
+        {Array.from({ length: 5 }, (_, index) => (
+          <span
+            key={index}
+            className={index < normalized ? "is-filled" : "is-empty"}
+          >
+            {index < normalized ? "◆" : "◇"}
+          </span>
+        ))}
+      </span>
+      <strong>{normalized}</strong>
+    </div>
+  );
 }
 
 function ActionButton({

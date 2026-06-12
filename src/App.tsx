@@ -1721,7 +1721,6 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                 calendarEventById={calendarEventById}
                 questById={new Map(quests.map((quest) => [quest.id, quest]))}
                 busy={busy || !isOnline}
-                onCreate={() => setTaskForm({ type: "create" })}
                 onEdit={(taskId) => setTaskForm({ type: "edit", taskId })}
                 onOpenDetail={(taskId) =>
                   setTaskDetail({ type: "open", taskId })
@@ -1983,7 +1982,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
               }}
               onDismissNotice={handleDismissNotice}
               busy={busy}
-              className="hidden lg:flex flex-[1] min-h-0"
+              className="hidden lg:flex flex-[1.25] min-h-0"
             />
           </aside>
         </div>
@@ -2405,6 +2404,7 @@ type LatestBulletin = {
   label: string;
   title: string;
   message: string;
+  meta?: string;
   noticeId?: number;
 };
 
@@ -2438,11 +2438,11 @@ function LatestBulletinPanel({
     expeditions,
     tasks,
     selectedPlayer,
-  }).slice(0, 3);
+  }).slice(0, 2);
 
   return (
-    <section className={`rpg-frame latest-bulletin-panel p-3 flex-col ${className}`}>
-      <header className="mb-2 flex items-center justify-between border-b-2 border-[var(--color-gold)]/25 pb-2">
+    <section className={`rpg-frame latest-bulletin-panel p-2.5 flex-col ${className}`}>
+      <header className="mb-1.5 flex items-center justify-between border-b-2 border-[var(--color-gold)]/25 pb-1.5">
         <h2 className="pixel-window-title text-sm font-bold">最新速報</h2>
         <span className="pixel-chip px-2 py-1 text-[10px] text-slate-400">
           ALERT
@@ -2456,21 +2456,26 @@ function LatestBulletinPanel({
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto custom-scroll space-y-2 pr-1">
-          {items.map((item) => (
+          {items.map((item, index) => (
             <article
               key={item.id}
-              className={`latest-bulletin-card latest-bulletin-${item.tone} p-2.5`}
+              className={`latest-bulletin-card latest-bulletin-${item.tone} ${index === 0 ? "is-primary" : ""} p-2.5`}
             >
               <div className="mb-1 flex items-center justify-between gap-2">
                 <span className="calendar-tag">{item.label}</span>
+                {item.meta && (
+                  <span className="truncate text-[9px] text-slate-500">
+                    {item.meta}
+                  </span>
+                )}
               </div>
-              <h3 className="pixel-title line-clamp-2 text-xs text-slate-100">
+              <h3 className="pixel-title line-clamp-2 text-sm text-slate-100">
                 {item.title}
               </h3>
-              <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-slate-500">
+              <p className="mt-1 line-clamp-3 text-[11px] leading-5 text-slate-400">
                 {item.message}
               </p>
-              <div className="mt-2 grid grid-cols-2 gap-1">
+              <div className={`mt-2 grid gap-1 ${item.noticeId ? "grid-cols-2" : "grid-cols-1"}`}>
                 <button
                   type="button"
                   onClick={onOpenNotices}
@@ -2478,7 +2483,7 @@ function LatestBulletinPanel({
                 >
                   詳細
                 </button>
-                {item.noticeId ? (
+                {item.noticeId && (
                   <button
                     type="button"
                     onClick={() => onDismissNotice(item.noticeId!)}
@@ -2487,27 +2492,12 @@ function LatestBulletinPanel({
                   >
                     確認済み
                   </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={onOpenNotices}
-                    className="quest-btn-primary min-h-9 px-2 text-[10px]"
-                  >
-                    速報を見る
-                  </button>
                 )}
               </div>
             </article>
           ))}
         </div>
       )}
-      <button
-        type="button"
-        onClick={onOpenNotices}
-        className="quest-btn-ghost mt-2 min-h-10 w-full px-2 text-[10px]"
-      >
-        ギルド速報を見る
-      </button>
     </section>
   );
 }
@@ -2543,6 +2533,7 @@ function buildLatestBulletins({
           level === "overdue"
             ? `${task.ownerName}の任務が未完了です。`
             : `${task.ownerName}の任務です。早めに確認してください。`,
+        meta: task.dueDate ?? undefined,
       };
     })
     .filter((item): item is LatestBulletin => item != null);
@@ -2559,6 +2550,7 @@ function buildLatestBulletins({
         : "ギルド速報",
     title: notice.title,
     message: notice.message,
+    meta: "通知",
     noticeId: notice.id,
   }));
 
@@ -2573,6 +2565,7 @@ function buildLatestBulletins({
           : "指名依頼",
     title: request.taskTitle,
     message: `${request.fromPlayer || "ギルド"}から${REQUEST_TYPE_LABELS[request.requestType]}が届いています。`,
+    meta: "受信依頼",
   }));
 
   const eventItems = events
@@ -2591,6 +2584,7 @@ function buildLatestBulletins({
       label: "ギルド予定",
       title: event.title,
       message: `${formatCalendarDate(event.eventDate)} ${formatEventTime(event)}`,
+      meta: formatCalendarDate(event.eventDate),
     }));
 
   const expeditionItems = expeditions
@@ -2605,6 +2599,7 @@ function buildLatestBulletins({
       label: "遠征帰還",
       title: expedition.expeditionName,
       message: `${selectedPlayer}が遠征から帰還しました。報酬を受け取れます。`,
+      meta: "報酬あり",
     }));
 
   return [
@@ -3018,7 +3013,6 @@ function TaskNotebookPanel({
   calendarEventById,
   questById,
   busy,
-  onCreate,
   onEdit,
   onOpenDetail,
   onDelegate,
@@ -3046,7 +3040,6 @@ function TaskNotebookPanel({
   calendarEventById: ReadonlyMap<number, CalendarEvent>;
   questById: ReadonlyMap<number, Quest>;
   busy: boolean;
-  onCreate: () => void;
   onEdit: (taskId: number) => void;
   onOpenDetail: (taskId: number) => void;
   onDelegate: (taskId: number) => void;
@@ -3110,16 +3103,6 @@ function TaskNotebookPanel({
                 : "公開されている任務だけを表示しています。非公開任務は本人以外には見えません。"}
             </p>
           </div>
-          {canManageTasks && (
-            <button
-              type="button"
-              onClick={onCreate}
-              disabled={busy}
-              className="quest-btn-primary min-h-11 px-3 text-xs disabled:opacity-45"
-            >
-              任務を記す
-            </button>
-          )}
         </div>
 
         <div className="mt-2 -mx-2 flex gap-1.5 overflow-x-auto custom-scroll px-2 lg:hidden">
@@ -3200,19 +3183,9 @@ function TaskNotebookPanel({
             </h4>
             <p className="mt-2 text-sm text-slate-500">
               {canManageTasks
-                ? "この期間の任務はありません。必要な作業を任務として記録できます。"
+                ? "この期間の任務はありません。必要な作業は右上の「任務を記す」から登録できます。"
                 : "この冒険者の非公開任務は表示されません。"}
             </p>
-            {canManageTasks && (
-              <button
-                type="button"
-                onClick={onCreate}
-                disabled={busy}
-                className="quest-btn-primary mt-4 min-h-11 px-4 text-sm disabled:opacity-45"
-              >
-                任務を記す
-              </button>
-            )}
           </div>
         ) : (
           <div className="grid gap-2">
