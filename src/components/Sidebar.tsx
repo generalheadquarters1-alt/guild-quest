@@ -138,11 +138,11 @@ export function Sidebar({
 
   return (
     <aside
-      className={`rpg-frame p-3 flex flex-col gap-3 ${className}`}
+      className={`rpg-frame p-2.5 flex flex-col gap-2 ${className}`}
     >
-      <div className="pb-2 border-b border-[var(--color-gold)]/20">
-        <h2 className="pixel-window-title text-sm font-bold">MENU</h2>
-        <p className="mt-1 text-[10px] text-slate-500">
+      <div className="pb-1.5 border-b border-[var(--color-gold)]/20">
+        <h2 className="pixel-window-title text-[13px] font-bold">MENU</h2>
+        <p className="mt-0.5 text-[9px] text-slate-500">
           依頼 {activeQuestCount}件 / 自分 {myQuestCount}件
         </p>
       </div>
@@ -153,19 +153,19 @@ export function Sidebar({
             key={item.key}
             type="button"
             onClick={item.onSelect}
-            className={`group pixel-menu-button flex min-h-11 w-full cursor-pointer items-center gap-3 px-3 py-3 text-left transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-gold-bright)] ${
+            className={`group pixel-menu-button flex min-h-10 w-full cursor-pointer items-center gap-2 px-2 py-2 text-left transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-gold-bright)] ${
               item.selected ? "is-selected" : ""
             }`}
           >
             <span className="w-4 text-xs" aria-hidden />
-            <span className="text-xl transition-transform group-hover:scale-110">
+            <span className="text-lg leading-none transition-transform group-hover:scale-110">
               {item.icon}
             </span>
             <div className="min-w-0">
-              <span className="block text-sm font-medium truncate">
+              <span className="block text-[13px] font-medium truncate">
                 {item.label}
               </span>
-              <span className="block text-[10px] text-slate-500">
+              <span className="block text-[9px] text-slate-500">
                 {item.sub}
               </span>
             </div>

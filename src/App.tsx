@@ -311,7 +311,7 @@ function GuildCodeGate({
   };
 
   return (
-    <div className="guild-entry-screen quest-bg h-dvh overflow-y-auto relative flex items-start justify-center px-3 pt-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] sm:items-center sm:px-4 sm:py-8">
+    <div className="guild-entry-screen quest-bg h-dvh overflow-y-auto relative flex items-start justify-center px-3 pt-2 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] sm:items-center sm:px-4 sm:py-5">
       <div className="absolute inset-0 opacity-30 pointer-events-none">
         {[...Array(18)].map((_, i) => (
           <span
@@ -327,7 +327,7 @@ function GuildCodeGate({
         ))}
       </div>
 
-      <section className="guild-gate-card rpg-frame w-full max-w-sm px-4 py-4 sm:max-w-md sm:px-7 sm:py-8 animate-fade-up">
+      <section className="guild-gate-card rpg-frame w-full max-w-sm px-3 py-3 sm:max-w-md sm:px-5 sm:py-5 animate-fade-up">
         <div className="text-center mb-3 sm:mb-6">
           <div className="inline-flex items-center justify-center w-12 h-12 sm:w-16 sm:h-16 border-2 border-[var(--color-gold-bright)] bg-[var(--color-deep)] mb-2 sm:mb-3 animate-pulse-glow shadow-[3px_3px_0_#000]">
             <span className="text-2xl sm:text-3xl">⚔️</span>
@@ -566,6 +566,13 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
 
   const isGuildOfficer = canIssueDirective(ownMember?.roleLevel);
 
+  const navigateTo = (next: NavId) => {
+    if (next === "my" && ownPlayerName) {
+      setSelectedPlayer(ownPlayerName);
+    }
+    setNav(next);
+  };
+
   const staffByName = useMemo(() => {
     return new Map(staff.map((member) => [member.name, member]));
   }, [staff]);
@@ -691,13 +698,14 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
     [quests],
   );
 
-  const myQuestCount = countMyQuests(activeQuests, selectedPlayer);
+  const myPagePlayer = ownPlayerName || selectedPlayer;
+  const myQuestCount = countMyQuests(activeQuests, myPagePlayer);
 
   const baseActive = useMemo(() => {
     return nav === "my"
-      ? activeQuests.filter((q) => isPlayerOnQuest(q, selectedPlayer))
+      ? activeQuests.filter((q) => isPlayerOnQuest(q, myPagePlayer))
       : activeQuests;
-  }, [activeQuests, nav, selectedPlayer]);
+  }, [activeQuests, myPagePlayer, nav]);
 
   const sortedActive = useMemo(() => {
     const filtered =
@@ -710,22 +718,22 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
             : quickFilter === "in_progress"
               ? baseActive.filter((q) => q.status === "in_progress")
               : quickFilter === "mine"
-                ? baseActive.filter((q) => isPlayerOnQuest(q, selectedPlayer))
+                ? baseActive.filter((q) => isPlayerOnQuest(q, myPagePlayer))
                 : quickFilter === "completed"
                   ? []
                   : baseActive;
-    return sortQuests(filtered);
-  }, [baseActive, quickFilter, selectedPlayer]);
+    return nav === "my" ? sortMyPageQuests(filtered) : sortQuests(filtered);
+  }, [baseActive, myPagePlayer, nav, quickFilter]);
 
   const sortedCompleted = useMemo(() => {
     const completed =
       nav === "my"
         ? completedHistory.filter((entry) =>
-            isPlayerOnQuest(entry.quest, selectedPlayer),
+            isPlayerOnQuest(entry.quest, myPagePlayer),
           )
         : completedHistory;
     return sortCompletedLog(completed);
-  }, [completedHistory, nav, selectedPlayer]);
+  }, [completedHistory, myPagePlayer, nav]);
 
   const recommendedQuest = useMemo(() => {
     const candidates = activeQuests.filter(
@@ -769,7 +777,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
     recruiting: baseActive.filter((q) => q.status === "recruiting").length,
     help_wanted: baseActive.filter((q) => q.status === "help_wanted").length,
     in_progress: baseActive.filter((q) => q.status === "in_progress").length,
-    mine: activeQuests.filter((q) => isPlayerOnQuest(q, selectedPlayer)).length,
+    mine: activeQuests.filter((q) => isPlayerOnQuest(q, myPagePlayer)).length,
     completed: sortedCompleted.length,
   };
 
@@ -816,6 +824,15 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
   const ownPlayerTasks = useMemo(() => {
     return adventurerTasks.filter((task) => task.ownerName === ownPlayerName);
   }, [adventurerTasks, ownPlayerName]);
+
+  const ownTodayTasks = useMemo(() => {
+    return sortAdventurerTasks(
+      filterTasksByTab(
+        ownPlayerTasks.filter((task) => task.status !== "completed"),
+        "today",
+      ),
+    );
+  }, [ownPlayerTasks]);
 
   const editingTask =
     taskForm.type === "edit" ? findTask(taskForm.taskId) ?? null : null;
@@ -1584,10 +1601,10 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
           </div>
         </header>
 
-        <div className="game-playfield min-h-0 flex-1 overflow-hidden flex flex-col lg:flex-row gap-0 lg:gap-4 p-0 lg:p-3">
+        <div className="game-playfield min-h-0 flex-1 overflow-hidden flex flex-col lg:flex-row gap-0 lg:gap-3 p-0 lg:p-2">
           <Sidebar
             active={nav}
-            onNavigate={setNav}
+            onNavigate={navigateTo}
             quickFilter={quickFilter}
             onQuickFilter={(filter) => {
               setQuickFilter(filter);
@@ -1596,7 +1613,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
             myQuestCount={myQuestCount}
             activeQuestCount={activeQuests.length}
             onOpenGuide={() => setGuideOpen(true)}
-            className="hidden lg:flex lg:w-56 xl:w-64 shrink-0 h-full min-h-0"
+            className="hidden lg:flex lg:w-56 xl:w-60 shrink-0 h-full min-h-0"
           />
 
           <main
@@ -1605,7 +1622,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
             }`}
           >
             <div className="mb-1.5 shrink-0">
-              <div className="rpg-frame board-hero px-2.5 py-1.5 sm:px-4 sm:py-3 overflow-hidden">
+              <div className="rpg-frame board-hero px-2.5 py-1.5 sm:px-3 sm:py-2 overflow-hidden">
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <p className="hidden sm:block font-[family-name:var(--font-display)] text-[10px] tracking-[0.24em] text-[var(--color-gold)]/80">
@@ -1648,7 +1665,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                             : nav === "notices"
                               ? `受信 ${receivedGuildRequests.length}件 · 警報 ${relevantNotices.length}件`
                           : nav === "calendar"
-                            ? `${formatCalendarMonth(calendarMonth)} · 予定 ${calendarEvents.length}件`
+                            ? `${formatCalendarMonth(calendarMonth)} · 予定 ${calendarEvents.filter(isGuildWideCalendarEvent).length}件`
                           : nav === "expedition"
                             ? `遠征チケット ${resources.expeditionTickets}枚 · GOLD ${resources.gold}`
                           : nav === "stats"
@@ -1683,7 +1700,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                       type="button"
                       onClick={() => setTaskForm({ type: "create" })}
                       disabled={boardDisabled}
-                      className="quest-btn-primary hidden lg:inline-flex min-h-11 px-4 text-sm disabled:opacity-50"
+                      className="quest-btn-primary hidden lg:inline-flex min-h-10 px-3 text-xs disabled:opacity-50"
                     >
                       任務を記す
                     </button>
@@ -1697,7 +1714,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
             ) : nav === "notebook" ? (
               <TaskNotebookPanel
                 tasks={visibleTasks}
-                selectedPlayer={ownPlayerName || selectedPlayer}
+                selectedPlayer={selectedPlayer}
                 ownPlayerName={ownPlayerName}
                 canManageTasks={canManageSelectedTasks}
                 dashboard={taskDashboard}
@@ -1715,7 +1732,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                 onOpenCalendar={(eventId) =>
                   setCalendarDetail({ type: "open", eventId })
                 }
-                onOpenNotices={() => setNav("notices")}
+                onOpenNotices={() => navigateTo("notices")}
                 onOpenRequestForm={(requestType, taskId) =>
                   setGuildRequestForm({ type: "open", requestType, taskId })
                 }
@@ -1741,13 +1758,21 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                 tasks={adventurerTasks}
                 selectedPlayer={selectedPlayer}
                 ownPlayerName={ownPlayerName}
-                staff={staff}
                 loading={calendarLoading}
                 monthDate={calendarMonth}
                 selectedDate={selectedCalendarDate}
                 onMonthChange={setCalendarMonth}
                 onSelectedDateChange={setSelectedCalendarDate}
                 onCreate={(date) => setCalendarForm({ type: "create", date })}
+                onCreateTask={(date) =>
+                  setTaskForm({
+                    type: "create",
+                    defaults: {
+                      dueDate: date,
+                      calendarEventId: null,
+                    },
+                  })
+                }
                 onEdit={(eventId) => setCalendarForm({ type: "edit", eventId })}
                 onOpenDetail={(eventId) =>
                   setCalendarDetail({ type: "open", eventId })
@@ -1784,7 +1809,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                 completedLog={sortedCompleted}
                 activityLogs={logs}
                 logsLoading={logsLoading}
-                onOpenNotices={() => setNav("notices")}
+                onOpenNotices={() => navigateTo("notices")}
                 onReopen={(id) => setReopen({ type: "open", questId: id })}
                 onDeleteCompleted={(id) =>
                   setConfirm({ type: "delete", questId: id })
@@ -1824,23 +1849,29 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                   onChange={setQuickFilter}
                 />
                 <div className="quest-list-scroll min-h-0 flex-1 overflow-y-auto custom-scroll pr-1">
-                  {nav === "my" && quickFilter == null && (
-                    <ExpeditionPanel
-                      resources={resources}
-                      expeditions={expeditions}
-                      currentExpedition={currentExpedition}
-                      loading={expeditionsLoading}
-                      now={now}
-                      busy={busy || !isOnline}
-                      onStart={handleStartExpedition}
-                      onClaim={handleClaimExpedition}
-                      compact
-                    />
-                  )}
                   <EmptyState
                     nav={nav}
                     filter={quickFilter}
                   />
+                  {nav === "my" && quickFilter == null && (
+                    <>
+                      <MyTodayTasksPanel
+                        tasks={ownTodayTasks}
+                        onOpenNotebook={() => navigateTo("notebook")}
+                      />
+                      <ExpeditionPanel
+                        resources={resources}
+                        expeditions={expeditions}
+                        currentExpedition={currentExpedition}
+                        loading={expeditionsLoading}
+                        now={now}
+                        busy={busy || !isOnline}
+                        onStart={handleStartExpedition}
+                        onClaim={handleClaimExpedition}
+                        compact
+                      />
+                    </>
+                  )}
                 </div>
               </div>
             ) : (
@@ -1851,19 +1882,6 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                   onChange={setQuickFilter}
                 />
                 <div className="quest-list-scroll min-h-0 flex-1 overflow-y-auto custom-scroll pr-1">
-                  {nav === "my" && quickFilter == null && (
-                    <ExpeditionPanel
-                      resources={resources}
-                      expeditions={expeditions}
-                      currentExpedition={currentExpedition}
-                      loading={expeditionsLoading}
-                      now={now}
-                      busy={busy || !isOnline}
-                      onStart={handleStartExpedition}
-                      onClaim={handleClaimExpedition}
-                      compact
-                    />
-                  )}
                   {nav === "board" && quickFilter == null && recommendedQuest && (
                     <RecommendedQuest
                       quest={recommendedQuest}
@@ -1916,13 +1934,32 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                       />
                     ))}
                   </div>
+                  {nav === "my" && quickFilter == null && (
+                    <>
+                      <MyTodayTasksPanel
+                        tasks={ownTodayTasks}
+                        onOpenNotebook={() => navigateTo("notebook")}
+                      />
+                      <ExpeditionPanel
+                        resources={resources}
+                        expeditions={expeditions}
+                        currentExpedition={currentExpedition}
+                        loading={expeditionsLoading}
+                        now={now}
+                        busy={busy || !isOnline}
+                        onStart={handleStartExpedition}
+                        onClaim={handleClaimExpedition}
+                        compact
+                      />
+                    </>
+                  )}
                 </div>
               </div>
             )}
           </main>
 
           <aside
-            className={`lg:w-72 xl:w-80 shrink-0 min-h-0 mx-3 mb-3 lg:mx-0 lg:mb-0 flex-col gap-3 ${
+            className={`lg:w-[17.5rem] xl:w-[19rem] shrink-0 min-h-0 mx-3 mb-3 lg:mx-0 lg:mb-0 flex-col gap-2 ${
               mobilePanel === "quests" ? "hidden lg:flex" : "flex"
             }`}
           >
@@ -1941,7 +1978,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
               tasks={ownPlayerTasks}
               selectedPlayer={ownPlayerName || selectedPlayer}
               onOpenNotices={() => {
-                setNav("notices");
+                navigateTo("notices");
                 setMobilePanel("quests");
               }}
               onDismissNotice={handleDismissNotice}
@@ -1951,7 +1988,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
           </aside>
         </div>
 
-        <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 px-2 pb-[calc(env(safe-area-inset-bottom)+0.35rem)]">
+        <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 px-2 pb-[calc(env(safe-area-inset-bottom)+0.25rem)]">
           <div className="rpg-frame grid grid-cols-6 max-w-lg mx-auto bg-[var(--color-panel)]">
             {(
               [
@@ -1966,28 +2003,28 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                 key={item.id}
                 type="button"
                 onClick={() => {
-                  setNav(item.id);
+                  navigateTo(item.id);
                   setQuickFilter(null);
                   setMobilePanel("quests");
                 }}
-                className={`min-h-14 flex flex-col items-center justify-center gap-0.5 py-1.5 text-[10px] font-semibold transition-colors font-[family-name:var(--font-pixel)] ${
+                className={`min-h-12 flex flex-col items-center justify-center gap-0.5 py-1 text-[9px] font-semibold transition-colors font-[family-name:var(--font-pixel)] ${
                   nav === item.id && mobilePanel === "quests"
                     ? "nav-active"
                     : "text-slate-500"
                 }`}
               >
-                <span className="text-base">{item.icon}</span>
+                <span className="text-sm">{item.icon}</span>
                 {item.label}
               </button>
             ))}
             <button
               type="button"
               onClick={() => setMobilePanel("party")}
-              className={`min-h-14 flex flex-col items-center justify-center gap-0.5 py-1.5 text-[10px] font-semibold border-l border-[var(--color-gold)]/15 transition-colors font-[family-name:var(--font-pixel)] ${
+              className={`min-h-12 flex flex-col items-center justify-center gap-0.5 py-1 text-[9px] font-semibold border-l border-[var(--color-gold)]/15 transition-colors font-[family-name:var(--font-pixel)] ${
                 mobilePanel === "party" ? "nav-active" : "text-slate-500"
               }`}
             >
-              <span className="text-base">👥</span>
+              <span className="text-sm">👥</span>
               パーティ
             </button>
           </div>
@@ -2079,7 +2116,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
         onClose={() => setUrgentReportSeen(true)}
         onOpenNotices={() => {
           setUrgentReportSeen(true);
-          setNav("notices");
+          navigateTo("notices");
           setMobilePanel("quests");
         }}
       />
@@ -2104,7 +2141,14 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
         event={detailCalendarEvent}
         relatedTasks={
           detailCalendarEvent
-            ? getRelatedTasksForEvent(detailCalendarEvent, adventurerTasks)
+            ? getRelatedTasksForEvent(
+                detailCalendarEvent,
+                filterVisibleCalendarTasks(
+                  adventurerTasks,
+                  selectedPlayer || ownPlayerName,
+                  ownPlayerName,
+                ),
+              )
             : []
         }
         relatedQuests={
@@ -2229,16 +2273,16 @@ function GameHud({
   };
 }) {
   return (
-    <div className="game-hud hidden lg:grid grid-cols-[minmax(17rem,0.9fr)_minmax(22rem,1.25fr)_minmax(18rem,1fr)] gap-3 px-3 pt-3">
-      <section className="rpg-frame hud-title-panel px-4 py-3 flex items-center gap-3">
+    <div className="game-hud hidden lg:grid grid-cols-[minmax(15rem,0.85fr)_minmax(20rem,1.25fr)_minmax(16rem,0.95fr)] gap-2 px-2 pt-2">
+      <section className="rpg-frame hud-title-panel px-3 py-2 flex items-center gap-2.5">
         <div className="guild-crest" aria-hidden>
           ⚔
         </div>
         <div>
-          <h1 className="pixel-title text-2xl font-bold gold-text">
+          <h1 className="pixel-title text-xl font-bold gold-text">
             ギルドクエスト
           </h1>
-          <p className="pixel-title text-xs text-[var(--color-gold-bright)] tracking-widest">
+          <p className="pixel-title text-[10px] text-[var(--color-gold-bright)] tracking-widest">
             ++ GUILD QUEST ++
           </p>
         </div>
@@ -2249,16 +2293,16 @@ function GameHud({
         selectedPlayer={selectedPlayer}
       />
 
-      <section className="rpg-frame px-4 py-3">
-        <div className="flex items-center gap-3">
+      <section className="rpg-frame px-3 py-2">
+        <div className="flex items-center gap-2.5">
           <div className="slime-orb" aria-hidden>
             ◆
           </div>
           <div className="min-w-0 flex-1">
-            <p className="pixel-title text-sm text-slate-300">
+            <p className="pixel-title text-xs text-slate-300">
               ギルドランク {GUILD_STATS.guildRank}
             </p>
-            <p className="mt-1 text-sm text-[var(--color-gold-bright)]">
+            <p className="mt-0.5 text-xs text-[var(--color-gold-bright)]">
               ギルドは平穏です
             </p>
             <HudMeter
@@ -2284,11 +2328,11 @@ function SelectedPlayerPanel({
   const frame = selectedMember?.avatarFrame ?? "bronze";
 
   return (
-    <section className="rpg-frame selected-player-panel px-4 py-2">
-      <p className="pixel-title text-xs text-[var(--color-gold-bright)]">
+    <section className="rpg-frame selected-player-panel px-3 py-1.5">
+      <p className="pixel-title text-[10px] text-[var(--color-gold-bright)]">
         操作中の冒険者
       </p>
-      <div className="mt-2 flex items-center gap-3">
+      <div className="mt-1 flex items-center gap-2">
         <AvatarSprite
           avatarType={selectedMember?.avatarType}
           fallback={selectedMember?.avatar ?? "⚔️"}
@@ -2299,14 +2343,14 @@ function SelectedPlayerPanel({
         />
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-3">
-            <p className="pixel-title text-lg text-slate-50 truncate">
+            <p className="pixel-title text-base text-slate-50 truncate">
               {selectedMember?.name ?? selectedPlayer ?? "未選択"}
             </p>
-            <p className="pixel-title text-base text-slate-50">
+            <p className="pixel-title text-sm text-slate-50">
               Lv.{selectedMember?.level ?? "--"}
             </p>
           </div>
-          <p className="text-xs text-[var(--color-gold)] truncate">
+          <p className="text-[10px] text-[var(--color-gold)] truncate">
             {selectedMember
               ? `${selectedMember.title} / ${selectedMember.role}`
               : "冒険者を選択してください"}
@@ -2343,12 +2387,12 @@ function HudMeter({
           : "bg-[var(--color-gold-bright)]";
 
   return (
-    <div className={compact ? "mt-1" : "mt-2"}>
-      <div className="flex justify-between text-[10px] text-slate-400">
+    <div className={compact ? "mt-1" : "mt-1.5"}>
+      <div className="flex justify-between text-[9px] text-slate-400">
         <span>{label}</span>
         <span>{Math.round(value)}%</span>
       </div>
-      <div className={compact ? "hud-meter h-2" : "hud-meter h-3"}>
+      <div className={compact ? "hud-meter h-1.5" : "hud-meter h-2"}>
         <div className={`h-full ${color}`} style={{ width: `${value}%` }} />
       </div>
     </div>
@@ -2534,6 +2578,7 @@ function buildLatestBulletins({
   const eventItems = events
     .filter(
       (event) =>
+        isGuildWideCalendarEvent(event) &&
         event.importance >= 4 &&
         event.eventDate >= today &&
         isDateWithinRange(event.eventDate, weekRange.start, weekRange.end),
@@ -2903,6 +2948,67 @@ function formatDueAt(value: string | null | undefined) {
   }
 }
 
+function MyTodayTasksPanel({
+  tasks,
+  onOpenNotebook,
+}: {
+  tasks: AdventurerTask[];
+  onOpenNotebook: () => void;
+}) {
+  return (
+    <section className="rpg-frame mt-2 p-2.5">
+      <header className="mb-2 flex items-center justify-between gap-2 border-b border-[var(--color-gold)]/20 pb-2">
+        <div className="min-w-0">
+          <h3 className="pixel-window-title text-sm font-semibold">
+            今日の任務
+          </h3>
+          <p className="mt-0.5 text-[10px] text-slate-500">
+            手帳の本日分 · {tasks.length}件
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onOpenNotebook}
+          className="quest-btn-ghost min-h-10 shrink-0 px-2.5 text-[10px]"
+        >
+          手帳へ
+        </button>
+      </header>
+      {tasks.length === 0 ? (
+        <p className="py-2 text-xs text-slate-500">本日の任務はありません。</p>
+      ) : (
+        <div className="grid gap-1.5">
+          {tasks.slice(0, 3).map((task) => (
+            <button
+              type="button"
+              key={task.id}
+              onClick={onOpenNotebook}
+              className="my-task-mini-card text-left"
+            >
+              <span className={`task-status-badge task-status-${task.status}`}>
+                {TASK_STATUS_LABELS[task.status]}
+              </span>
+              <span className="min-w-0 truncate text-xs text-slate-100">
+                {task.title}
+              </span>
+              <span className="calendar-tag shrink-0">{getTaskDueLabel(task)}</span>
+            </button>
+          ))}
+          {tasks.length > 3 && (
+            <button
+              type="button"
+              onClick={onOpenNotebook}
+              className="text-left text-[11px] text-[var(--color-gold-bright)]"
+            >
+              ほか {tasks.length - 3}件を手帳で見る
+            </button>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function TaskNotebookPanel({
   tasks,
   selectedPlayer,
@@ -2979,6 +3085,11 @@ function TaskNotebookPanel({
     { label: "遠征帰還", value: dashboard.expeditionReturns, tone: "blue" },
     { label: "未受領報酬", value: dashboard.unclaimedRewards, tone: "green" },
   ];
+  const mobileStats = stats.filter((stat) =>
+    ["本日の任務", "期限間近", "依頼中", "受信依頼", "ギルド指令"].includes(
+      stat.label,
+    ),
+  );
 
   return (
     <section className="notebook-panel min-h-0 flex-1 overflow-hidden flex flex-col gap-2">
@@ -3011,7 +3122,25 @@ function TaskNotebookPanel({
           )}
         </div>
 
-        <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+        <div className="mt-2 -mx-2 flex gap-1.5 overflow-x-auto custom-scroll px-2 lg:hidden">
+          {mobileStats.map((stat) => (
+            <button
+              type="button"
+              key={stat.label}
+              onClick={
+                stat.label === "受信依頼" || stat.label === "ギルド指令"
+                  ? onOpenNotices
+                  : undefined
+              }
+              className={`notebook-stat-chip notebook-stat-${stat.tone}`}
+            >
+              <span>{stat.label.replace("本日の任務", "本日")}</span>
+              <strong>{stat.value}</strong>
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-3 hidden grid-cols-2 gap-1.5 lg:grid xl:grid-cols-4">
           {stats.map((stat) => (
             <button
               type="button"
@@ -3044,7 +3173,7 @@ function TaskNotebookPanel({
                 type="button"
                 onClick={() => setTab(item)}
                 aria-pressed={selected}
-                className={`pixel-chip min-h-11 shrink-0 px-2.5 text-[11px] font-semibold transition-all ${
+                className={`pixel-chip min-h-10 shrink-0 px-2 text-[10px] font-semibold transition-all ${
                   selected
                     ? "bg-[var(--color-gold-bright)] text-[#17101a]"
                     : "bg-black/80 text-slate-300 hover:text-[var(--color-gold-bright)]"
@@ -3323,15 +3452,20 @@ function TaskFormModal({
 
   const eventOptions = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
-    return [...calendarEvents].sort((a, b) => {
-      const aFuture = a.eventDate >= today ? 0 : 1;
-      const bFuture = b.eventDate >= today ? 0 : 1;
-      if (aFuture !== bFuture) return aFuture - bFuture;
-      const date = a.eventDate.localeCompare(b.eventDate);
-      if (date !== 0) return date;
-      return (a.startTime || "99:99").localeCompare(b.startTime || "99:99");
-    });
-  }, [calendarEvents]);
+    return [...calendarEvents]
+      .filter(
+        (event) =>
+          isGuildWideCalendarEvent(event) || event.id === form.calendarEventId,
+      )
+      .sort((a, b) => {
+        const aFuture = a.eventDate >= today ? 0 : 1;
+        const bFuture = b.eventDate >= today ? 0 : 1;
+        if (aFuture !== bFuture) return aFuture - bFuture;
+        const date = a.eventDate.localeCompare(b.eventDate);
+        if (date !== 0) return date;
+        return (a.startTime || "99:99").localeCompare(b.startTime || "99:99");
+      });
+  }, [calendarEvents, form.calendarEventId]);
 
   useEffect(() => {
     if (!open) return;
@@ -3451,7 +3585,7 @@ function TaskFormModal({
             </label>
             <label>
               <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">
-                関連予定
+                既存予定と関連
               </span>
               <select
                 value={form.calendarEventId ?? ""}
@@ -3464,7 +3598,7 @@ function TaskFormModal({
                 disabled={submitting}
                 className="quest-input mt-1.5"
               >
-                <option value="">関連する予定を選択</option>
+                <option value="">関連なし</option>
                 {eventOptions.map((event) => (
                   <option key={event.id} value={event.id}>
                     {formatCalendarDate(event.eventDate)} {formatEventTime(event)} [{EVENT_TYPE_LABELS[event.eventType]}] {event.title}
@@ -4002,13 +4136,18 @@ function GuildRequestFormModal({
 
   const eventOptions = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
-    return [...calendarEvents].sort((a, b) => {
-      const aFuture = a.eventDate >= today ? 0 : 1;
-      const bFuture = b.eventDate >= today ? 0 : 1;
-      if (aFuture !== bFuture) return aFuture - bFuture;
-      return a.eventDate.localeCompare(b.eventDate);
-    });
-  }, [calendarEvents]);
+    return [...calendarEvents]
+      .filter(
+        (event) =>
+          isGuildWideCalendarEvent(event) || event.id === form.calendarEventId,
+      )
+      .sort((a, b) => {
+        const aFuture = a.eventDate >= today ? 0 : 1;
+        const bFuture = b.eventDate >= today ? 0 : 1;
+        if (aFuture !== bFuture) return aFuture - bFuture;
+        return a.eventDate.localeCompare(b.eventDate);
+      });
+  }, [calendarEvents, form.calendarEventId]);
 
   useEffect(() => {
     if (!open) return;
@@ -4119,7 +4258,7 @@ function GuildRequestFormModal({
             </label>
             <label>
               <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">
-                関連予定
+                既存予定と関連
               </span>
               <select
                 value={form.calendarEventId ?? ""}
@@ -4132,7 +4271,7 @@ function GuildRequestFormModal({
                 disabled={submitting}
                 className="quest-input mt-1.5"
               >
-                <option value="">関連する予定を選択</option>
+                <option value="">関連なし</option>
                 {eventOptions.map((event) => (
                   <option key={event.id} value={event.id}>
                     {formatCalendarDate(event.eventDate)} [{EVENT_TYPE_LABELS[event.eventType]}] {event.title}
@@ -4258,6 +4397,7 @@ function GuildNoticesPanel({
   const importantEvents = events
     .filter(
       (event) =>
+        isGuildWideCalendarEvent(event) &&
         event.importance >= 4 &&
         event.eventDate >= today &&
         isDateWithinRange(event.eventDate, weekRange.start, weekRange.end),
@@ -4293,7 +4433,7 @@ function GuildNoticesPanel({
       <section className="rpg-frame min-h-0 flex-1 p-4">
         <div className="space-y-2">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-24 animate-pulse border-2 border-white/15 bg-white/5 shadow-[2px_2px_0_#000]" />
+            <div key={i} className="h-[72px] animate-pulse border-2 border-white/15 bg-white/5 shadow-[2px_2px_0_#000]" />
           ))}
         </div>
       </section>
@@ -4432,7 +4572,7 @@ function BulletinFilters({
             type="button"
             aria-pressed={active === item.id}
             onClick={() => onChange(item.id)}
-            className={`pixel-chip min-h-11 shrink-0 px-2.5 text-[11px] font-semibold transition-all ${
+            className={`pixel-chip min-h-10 shrink-0 px-2 text-[10px] font-semibold transition-all ${
               active === item.id
                 ? "bg-[var(--color-gold-bright)] text-[#17101a]"
                 : "bg-black/80 text-slate-300 hover:text-[var(--color-gold-bright)]"
@@ -4710,6 +4850,10 @@ function CalendarEventFormModal({
     setError(null);
   }, [open, mode, initial, initialDate]);
 
+  const eventTypeOptions = Object.entries(EVENT_TYPE_LABELS).filter(
+    ([value]) => value !== "personal" || form.eventType === "personal",
+  );
+
   if (!open) return null;
 
   const update = <K extends keyof CalendarEventFormData>(
@@ -4822,7 +4966,7 @@ function CalendarEventFormModal({
                 disabled={submitting}
                 className="quest-input mt-1.5"
               >
-                {Object.entries(EVENT_TYPE_LABELS).map(([value, label]) => (
+                {eventTypeOptions.map(([value, label]) => (
                   <option key={value} value={value}>
                     {label}
                   </option>
@@ -5208,7 +5352,7 @@ function QuickFilters({
           type="button"
           aria-pressed={active == null}
           onClick={() => onChange(null)}
-          className={`pixel-chip min-h-11 shrink-0 px-2.5 text-[11px] font-semibold transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-gold-bright)] ${
+          className={`pixel-chip min-h-10 shrink-0 px-2 text-[10px] font-semibold transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-gold-bright)] ${
             active == null
               ? "bg-[var(--color-gold-bright)] text-[#17101a]"
               : "bg-black/80 text-slate-300 hover:text-[var(--color-gold-bright)]"
@@ -5224,7 +5368,7 @@ function QuickFilters({
               type="button"
               aria-pressed={selected}
               onClick={() => onChange(selected ? null : filter.id)}
-              className={`pixel-chip min-h-11 shrink-0 px-2.5 text-[11px] font-semibold transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-gold-bright)] ${
+              className={`pixel-chip min-h-10 shrink-0 px-2 text-[10px] font-semibold transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-gold-bright)] ${
                 selected
                   ? "bg-[var(--color-gold-bright)] text-[#17101a]"
                   : "bg-black/80 text-slate-300 hover:text-[var(--color-gold-bright)]"
@@ -5604,13 +5748,13 @@ function CalendarPanel({
   tasks,
   selectedPlayer,
   ownPlayerName,
-  staff,
   loading,
   monthDate,
   selectedDate,
   onMonthChange,
   onSelectedDateChange,
   onCreate,
+  onCreateTask,
   onEdit,
   onOpenDetail,
   busy,
@@ -5620,21 +5764,25 @@ function CalendarPanel({
   tasks: AdventurerTask[];
   selectedPlayer: string;
   ownPlayerName: string;
-  staff: PartyMember[];
   loading: boolean;
   monthDate: Date;
   selectedDate: string;
   onMonthChange: (date: Date) => void;
   onSelectedDateChange: (date: string) => void;
   onCreate: (date: string) => void;
+  onCreateTask: (date: string) => void;
   onEdit: (eventId: number) => void;
   onOpenDetail: (eventId: number) => void;
   busy: boolean;
 }) {
   const monthGrid = getMonthGrid(monthDate);
+  const visibleEvents = useMemo(
+    () => events.filter(isGuildWideCalendarEvent),
+    [events],
+  );
   const eventsByDate = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>();
-    for (const event of events) {
+    for (const event of visibleEvents) {
       const list = map.get(event.eventDate) ?? [];
       list.push(event);
       map.set(event.eventDate, list);
@@ -5643,10 +5791,12 @@ function CalendarPanel({
       list.sort(compareCalendarEvents);
     }
     return map;
-  }, [events]);
+  }, [visibleEvents]);
+  const selectedTaskOwner = selectedPlayer || ownPlayerName || "";
+  const viewingOwnCalendarTasks = selectedTaskOwner === ownPlayerName;
   const visibleCalendarTasks = useMemo(
-    () => filterVisibleCalendarTasks(tasks, ownPlayerName),
-    [ownPlayerName, tasks],
+    () => filterVisibleCalendarTasks(tasks, selectedTaskOwner, ownPlayerName),
+    [ownPlayerName, selectedTaskOwner, tasks],
   );
   const tasksByDate = useMemo(() => {
     const map = new Map<string, AdventurerTask[]>();
@@ -5663,14 +5813,8 @@ function CalendarPanel({
   }, [visibleCalendarTasks]);
   const selectedEvents = eventsByDate.get(selectedDate) ?? [];
   const selectedTasks = tasksByDate.get(selectedDate) ?? [];
-  const selectedPublicTasks = selectedTasks.filter(
-    (task) => task.ownerName !== ownPlayerName && task.isPublic,
-  );
-  const selectedOwnTasks = selectedTasks.filter(
-    (task) => task.ownerName === ownPlayerName,
-  );
   const weekRange = getWeekRange(new Date());
-  const weekEvents = events
+  const weekEvents = visibleEvents
     .filter((event) => isDateWithinRange(event.eventDate, weekRange.start, weekRange.end))
     .sort(compareCalendarEvents);
   const weekTasks = visibleCalendarTasks
@@ -5680,11 +5824,18 @@ function CalendarPanel({
         : false,
     )
     .sort(compareCalendarTasks);
-  const weekPublicTasks = weekTasks.filter(
-    (task) => task.ownerName !== ownPlayerName && task.isPublic,
-  );
-  const weekOwnTasks = weekTasks.filter((task) => task.ownerName === ownPlayerName);
-  const activeStaff = staff.filter((member) => member.isActive !== false);
+  const taskSectionTitle = viewingOwnCalendarTasks
+    ? "自分の任務"
+    : `${selectedTaskOwner || "冒険者"}の公開任務`;
+  const taskSectionSubtitle = viewingOwnCalendarTasks
+    ? "非公開任務も本人には表示"
+    : "公開設定の任務だけ表示";
+  const emptyTaskText = viewingOwnCalendarTasks
+    ? "この日の自分の任務はありません。"
+    : "この日の公開任務はありません。";
+  const emptyWeekTaskText = viewingOwnCalendarTasks
+    ? "今週の自分の任務はありません。"
+    : "今週の公開任務はありません。";
 
   const moveMonth = (offset: number) => {
     onMonthChange(new Date(monthDate.getFullYear(), monthDate.getMonth() + offset, 1));
@@ -5711,17 +5862,20 @@ function CalendarPanel({
             </h3>
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
-            <button type="button" onClick={() => moveMonth(-1)} className="quest-btn-ghost min-h-11 px-3 text-xs">
+            <button type="button" onClick={() => moveMonth(-1)} className="quest-btn-ghost min-h-10 px-2 text-[11px]">
               前月
             </button>
-            <button type="button" onClick={goToday} className="quest-btn-ghost min-h-11 px-3 text-xs">
+            <button type="button" onClick={goToday} className="quest-btn-ghost min-h-10 px-2 text-[11px]">
               今日へ
             </button>
-            <button type="button" onClick={() => moveMonth(1)} className="quest-btn-ghost min-h-11 px-3 text-xs">
+            <button type="button" onClick={() => moveMonth(1)} className="quest-btn-ghost min-h-10 px-2 text-[11px]">
               次月
             </button>
-            <button type="button" onClick={() => onCreate(selectedDate)} className="quest-btn-primary min-h-11 px-3 text-xs">
-              予定追加
+            <button type="button" onClick={() => onCreate(selectedDate)} className="quest-btn-primary min-h-10 px-2 text-[11px]">
+              予定を追加
+            </button>
+            <button type="button" onClick={() => onCreateTask(selectedDate)} className="quest-btn-ghost min-h-10 px-2 text-[11px]">
+              任務を追加
             </button>
           </div>
         </header>
@@ -5733,7 +5887,7 @@ function CalendarPanel({
           <p className="text-xs text-slate-500">
             {loading
               ? "読み込み中..."
-              : `予定 ${events.length}件 / 任務 ${visibleCalendarTasks.length}件`}
+              : `全体予定 ${visibleEvents.length}件 / ${selectedTaskOwner || "選択中"}の任務 ${visibleCalendarTasks.length}件`}
           </p>
         </div>
 
@@ -5781,10 +5935,10 @@ function CalendarPanel({
             </div>
             <button
               type="button"
-              onClick={() => onCreate(selectedDate)}
+              onClick={() => onCreateTask(selectedDate)}
               className="quest-btn-ghost min-h-11 px-3 text-xs"
             >
-              追加
+              任務を追加
             </button>
           </header>
           <div className="grid gap-3">
@@ -5798,17 +5952,11 @@ function CalendarPanel({
                 onOpenDetail={onOpenDetail}
               />
             </CalendarSection>
-            <CalendarSection title="公開任務" subtitle="公開されている個人任務">
+            <CalendarSection title={taskSectionTitle} subtitle={taskSectionSubtitle}>
               <TaskCalendarList
-                tasks={selectedPublicTasks}
-                emptyText="この日の公開任務はありません。"
-              />
-            </CalendarSection>
-            <CalendarSection title="自分の任務" subtitle={`${ownPlayerName || "自分"} の手帳`}>
-              <TaskCalendarList
-                tasks={selectedOwnTasks}
-                emptyText="この日の自分の任務はありません。"
-                mine
+                tasks={selectedTasks}
+                emptyText={emptyTaskText}
+                mine={viewingOwnCalendarTasks}
               />
             </CalendarSection>
           </div>
@@ -5820,7 +5968,7 @@ function CalendarPanel({
               今週の予定と任務
             </h3>
             <p className="mt-1 text-xs text-slate-500">
-              今日から7日間 / 公開任務は {activeStaff.length}名のギルドから確認できます
+              今日から7日間 / 任務は選択中冒険者だけを表示します
             </p>
           </header>
           <div className="grid gap-3">
@@ -5835,19 +5983,12 @@ function CalendarPanel({
                 compact
               />
             </CalendarSection>
-            <CalendarSection title="公開任務" subtitle="他冒険者の公開任務">
+            <CalendarSection title={taskSectionTitle} subtitle={taskSectionSubtitle}>
               <TaskCalendarList
-                tasks={weekPublicTasks}
-                emptyText="今週の公開任務はありません。"
+                tasks={weekTasks}
+                emptyText={emptyWeekTaskText}
                 compact
-              />
-            </CalendarSection>
-            <CalendarSection title="自分の任務" subtitle={ownPlayerName || selectedPlayer || "自分"}>
-              <TaskCalendarList
-                tasks={weekOwnTasks}
-                emptyText="今週の自分の任務はありません。"
-                compact
-                mine
+                mine={viewingOwnCalendarTasks}
               />
             </CalendarSection>
           </div>
@@ -6083,11 +6224,37 @@ function compareCalendarTasks(a: AdventurerTask, b: AdventurerTask) {
   return b.updatedAt.localeCompare(a.updatedAt);
 }
 
-function filterVisibleCalendarTasks(tasks: AdventurerTask[], ownPlayerName: string) {
+function filterVisibleCalendarTasks(
+  tasks: AdventurerTask[],
+  selectedPlayer: string,
+  ownPlayerName: string,
+) {
   return tasks.filter((task) => {
     if (!task.dueDate) return false;
-    if (task.ownerName === ownPlayerName) return true;
-    return task.isPublic;
+    if (task.ownerName !== selectedPlayer) return false;
+    return selectedPlayer === ownPlayerName || task.isPublic;
+  });
+}
+
+function isGuildWideCalendarEvent(event: CalendarEvent) {
+  return event.eventType !== "personal";
+}
+
+function sortMyPageQuests(quests: Quest[]): Quest[] {
+  const statusPriority: Record<Quest["status"], number> = {
+    in_progress: 0,
+    help_wanted: 1,
+    recruiting: 2,
+    open: 3,
+    completed: 4,
+  };
+
+  return [...quests].sort((a, b) => {
+    const byStatus = statusPriority[a.status] - statusPriority[b.status];
+    if (byStatus !== 0) return byStatus;
+    const byScore = getPriorityScore(b) - getPriorityScore(a);
+    if (byScore !== 0) return byScore;
+    return (b.createdAt ?? "").localeCompare(a.createdAt ?? "");
   });
 }
 
@@ -6142,7 +6309,7 @@ function ExpeditionPanel({
         {[1, 2, 3].map((i) => (
           <div
             key={i}
-            className="rpg-frame h-24 animate-pulse bg-white/5"
+            className="rpg-frame h-[72px] animate-pulse bg-white/5"
           />
         ))}
       </div>
@@ -6370,6 +6537,39 @@ function GuildOverview({
     <div
       className={`min-h-0 flex-1 overflow-y-auto custom-scroll space-y-3 pb-20 lg:pb-1 pr-1 ${busy ? "opacity-80 pointer-events-none" : ""}`}
     >
+      <section className="rpg-frame guild-bulletin-gateway p-3 sm:p-4">
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="font-[family-name:var(--font-display)] text-[10px] tracking-[0.22em] text-[var(--color-gold)]/80">
+              GUILD NEWS
+            </p>
+            <h3 className="pixel-window-title mt-1 text-base font-semibold">
+              ギルド速報
+            </h3>
+            <p className="mt-1 text-xs text-slate-500">
+              警報・受信依頼・重要予定・遠征帰還をまとめて確認できます。
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onOpenNotices}
+            className="quest-btn-primary min-h-11 shrink-0 px-3 text-xs"
+          >
+            速報を見る
+          </button>
+        </header>
+        <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+          <div className="border-2 border-red-300/45 bg-red-500/10 px-3 py-2 shadow-[2px_2px_0_#000]">
+            <span className="text-slate-400">ギルド警報</span>
+            <strong className="ml-2 text-red-100">{noticeCount}</strong>
+          </div>
+          <div className="border-2 border-[var(--color-gold)]/45 bg-[var(--color-gold)]/10 px-3 py-2 shadow-[2px_2px_0_#000]">
+            <span className="text-slate-400">受信依頼</span>
+            <strong className="ml-2 text-[var(--color-gold-bright)]">{requestCount}</strong>
+          </div>
+        </div>
+      </section>
+
       <section className="rpg-frame p-3 sm:p-4">
         <header className="mb-4 flex flex-wrap items-start justify-between gap-3 pb-3 border-b border-[var(--color-gold)]/20">
           <div>

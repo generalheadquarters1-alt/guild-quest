@@ -307,7 +307,7 @@ function ActionButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`quest-btn-ghost min-h-11 w-full sm:w-auto px-3 py-2 text-xs font-semibold transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-45 ${styles[variant]}`}
+      className={`quest-btn-ghost min-h-10 w-full sm:w-auto px-2.5 py-1.5 text-[11px] font-semibold transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-45 ${styles[variant]}`}
     >
       <span className="mr-1" aria-hidden>
         ▶

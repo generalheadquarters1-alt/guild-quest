@@ -75,10 +75,9 @@ export async function createAdventurerTask(
   form: AdventurerTaskFormData,
   ownerName: string,
 ): Promise<AdventurerTask> {
-  const calendarEventId = await resolveTaskCalendarEvent(form, ownerName);
   const { data, error } = await requireSupabase()
     .from("adventurer_tasks")
-    .insert(toTaskPayload(form, ownerName, calendarEventId, "todo"))
+    .insert(toTaskPayload(form, ownerName, form.calendarEventId, "todo"))
     .select("*")
     .single();
 
@@ -100,15 +99,13 @@ export async function updateAdventurerTask(
   form: AdventurerTaskFormData,
   actorName: string,
 ): Promise<AdventurerTask> {
-  const calendarEventId =
-    form.calendarEventId ?? (await resolveTaskCalendarEvent(form, task.ownerName));
   const { data, error } = await requireSupabase()
     .from("adventurer_tasks")
     .update(
       toTaskPayload(
         form,
         task.ownerName,
-        calendarEventId,
+        form.calendarEventId,
         task.status,
         task.questId,
       ),
@@ -317,15 +314,6 @@ async function updateTaskStatus(
 
   if (error) throw error;
   return rowToAdventurerTask(data as AdventurerTaskRow);
-}
-
-async function resolveTaskCalendarEvent(
-  form: AdventurerTaskFormData,
-  ownerName: string,
-) {
-  if (form.calendarEventId != null) return form.calendarEventId;
-  void ownerName;
-  return null;
 }
 
 function toTaskPayload(

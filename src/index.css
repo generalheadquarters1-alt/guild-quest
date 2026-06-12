@@ -29,6 +29,7 @@ html {
   height: 100%;
   scroll-behavior: smooth;
   overflow: hidden;
+  overflow-x: hidden;
 }
 
 body {
@@ -38,16 +39,26 @@ body {
   background: var(--color-void);
   color: #f4ead0;
   overflow: hidden;
+  overflow-x: hidden;
   image-rendering: pixelated;
+  overscroll-behavior: none;
 }
 
 #root {
   height: 100%;
   overflow: hidden;
+  overflow-x: hidden;
 }
 
 button {
   -webkit-tap-highlight-color: transparent;
+}
+
+img,
+svg,
+canvas,
+video {
+  max-width: 100%;
 }
 
 button:focus-visible,
@@ -1326,6 +1337,59 @@ textarea:focus-visible {
   image-rendering: pixelated;
 }
 
+.notebook-stat-chip {
+  display: inline-flex;
+  min-height: 40px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.45rem;
+  border: 2px solid rgba(255, 244, 196, 0.28);
+  background: rgba(0, 0, 0, 0.34);
+  padding: 0.25rem 0.55rem;
+  color: #d9dce6;
+  font-family: var(--font-pixel);
+  font-size: 0.64rem;
+  box-shadow: 2px 2px 0 #000;
+}
+
+.notebook-stat-chip strong {
+  color: var(--color-gold-bright);
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.notebook-stat-chip:active,
+.my-task-mini-card:active {
+  transform: translate(1px, 1px);
+}
+
+.my-task-mini-card {
+  display: grid;
+  min-height: 38px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.4rem;
+  border: 2px solid rgba(255, 244, 196, 0.18);
+  background: rgba(0, 0, 0, 0.24);
+  padding: 0.28rem 0.45rem;
+  box-shadow: 2px 2px 0 #000;
+  transition:
+    border-color 0.15s,
+    transform 0.12s;
+}
+
+.my-task-mini-card:hover,
+.my-task-mini-card:focus-visible {
+  border-color: rgba(255, 244, 196, 0.58);
+  outline: none;
+}
+
+.guild-bulletin-gateway {
+  background:
+    linear-gradient(90deg, rgba(180, 41, 41, 0.14), transparent 42%),
+    var(--color-panel);
+}
+
 .calendar-board {
   background:
     linear-gradient(90deg, rgba(139, 80, 36, 0.2), transparent 52%),
@@ -2130,6 +2194,579 @@ textarea:focus-visible {
   background: rgba(0, 0, 0, 0.28);
   color: var(--color-gold-bright);
   box-shadow: 2px 2px 0 #000;
+}
+
+/* Production density pass: keep the JRPG frame, but let the app fit real screens. */
+.rpg-frame {
+  border-width: 2px;
+  box-shadow:
+    0 0 0 2px #050510 inset,
+    3px 3px 0 #000,
+    5px 5px 0 rgba(0, 0, 0, 0.28);
+}
+
+.rpg-frame::before,
+.rpg-frame::after {
+  width: 6px;
+  height: 6px;
+}
+
+.rpg-frame::before {
+  top: 2px;
+  left: 2px;
+}
+
+.rpg-frame::after {
+  right: 2px;
+  bottom: 2px;
+}
+
+.guild-gate-card {
+  box-shadow:
+    0 0 0 2px #050510 inset,
+    3px 3px 0 #000,
+    6px 6px 0 rgba(0, 0, 0, 0.3);
+}
+
+.avatar-choice {
+  min-height: 132px;
+  border-width: 2px;
+  gap: 0.25rem;
+  padding: 0.55rem;
+  box-shadow:
+    0 0 0 2px #050510 inset,
+    3px 3px 0 #000;
+}
+
+.avatar-choice.is-selected {
+  box-shadow:
+    0 0 0 2px #050510 inset,
+    0 0 14px rgba(255, 240, 168, 0.28),
+    3px 3px 0 #000;
+}
+
+.hud-title-panel,
+.selected-player-panel {
+  min-height: 66px;
+}
+
+.guild-crest {
+  width: 42px;
+  height: 42px;
+  border-width: 2px;
+  font-size: 1.35rem;
+  box-shadow:
+    0 0 0 2px #071022 inset,
+    2px 2px 0 #000;
+}
+
+.slime-orb {
+  width: 42px;
+  height: 42px;
+  border-width: 2px;
+  box-shadow:
+    0 0 0 2px #071022 inset,
+    2px 2px 0 #000;
+}
+
+.hud-avatar {
+  width: 48px;
+  height: 48px;
+  border-width: 2px;
+}
+
+.hud-avatar-sm {
+  width: 42px;
+  height: 42px;
+}
+
+.mobile-top-hud {
+  min-height: 56px;
+}
+
+.mobile-header-avatar {
+  width: 32px;
+  height: 32px;
+}
+
+.mobile-icon-command,
+.mobile-post-command {
+  min-height: 38px;
+  box-shadow: 2px 2px 0 #000;
+}
+
+.mobile-icon-command {
+  width: 38px;
+}
+
+@media (min-width: 1024px) {
+  .board-hero {
+    min-height: 54px;
+  }
+}
+
+.quest-btn-primary,
+.quest-btn-secondary,
+.quest-btn-ghost {
+  min-height: 40px;
+  padding-block: 0.42rem;
+  font-size: 0.78rem;
+  box-shadow: 2px 2px 0 #000;
+}
+
+.quest-input {
+  min-height: 40px;
+  padding: 0.48rem 0.65rem;
+  font-size: 0.82rem;
+  box-shadow: 2px 2px 0 #000;
+}
+
+.pixel-chip {
+  box-shadow: 2px 2px 0 #000;
+}
+
+.quick-filter-bar {
+  min-height: 40px;
+}
+
+.quest-card {
+  border-width: 2px;
+  box-shadow:
+    0 0 0 2px rgba(255, 244, 196, 0.36) inset,
+    3px 3px 0 #000;
+}
+
+.quest-card-dense {
+  min-height: 132px;
+  padding: 0.5rem !important;
+}
+
+.quest-card-row {
+  grid-template-columns: 56px minmax(0, 1fr) 112px;
+  gap: 0.5rem;
+}
+
+.quest-card-title-row {
+  gap: 0.35rem;
+  border-bottom-width: 1px;
+  padding-bottom: 0.25rem;
+}
+
+.quest-card-title {
+  font-size: 0.96rem;
+  line-height: 1.18;
+}
+
+.quest-card-meta {
+  margin-top: 0.24rem;
+  font-size: 0.68rem;
+  line-height: 1.25;
+}
+
+.quest-gauge-inline {
+  gap: 0.2rem 0.55rem;
+  margin-top: 0.24rem;
+  font-size: 0.72rem;
+}
+
+.quest-card-facts {
+  gap: 0.25rem;
+  margin-top: 0.32rem;
+}
+
+.quest-fact {
+  border-width: 1px;
+  padding: 0.16rem 0.25rem;
+  box-shadow: none;
+}
+
+.quest-fact span {
+  font-size: 0.52rem;
+}
+
+.quest-fact strong {
+  font-size: 0.66rem;
+  line-height: 1.2;
+}
+
+.quest-party-line {
+  gap: 0.3rem;
+  margin-top: 0.32rem;
+}
+
+.quest-card-side {
+  gap: 0.3rem;
+}
+
+.quest-card-side .quest-rank-panel {
+  padding-left: 0.35rem;
+}
+
+.quest-card-side .quest-rank-panel strong {
+  font-size: 1.35rem;
+}
+
+.quest-card-side .quest-actions {
+  gap: 0.28rem;
+}
+
+.quest-card-side .quest-btn-ghost,
+.quest-action-spacer {
+  min-height: 36px;
+}
+
+.quest-card-side .quest-btn-ghost {
+  padding: 0.25rem 0.35rem;
+  font-size: 0.7rem;
+}
+
+.quest-card-compact .notice-ribbon {
+  min-height: 20px;
+  margin-bottom: 0.3rem;
+  font-size: 0.64rem;
+}
+
+.quest-card-compact .quest-notice-layout {
+  grid-template-columns: 44px minmax(0, 1fr) minmax(66px, 0.2fr);
+  gap: 0.45rem;
+}
+
+.quest-card-compact .quest-notice-icon {
+  width: 42px;
+  height: 42px;
+}
+
+.quest-card-compact .quest-rank-panel strong {
+  font-size: 1.3rem;
+}
+
+.quest-card-compact .quest-seal,
+.quest-seal {
+  width: 34px;
+  height: 34px;
+  border-width: 3px;
+  margin-top: 0.2rem;
+  font-size: 1rem !important;
+}
+
+.quest-member-chip {
+  gap: 0.25rem;
+  padding: 0.08rem 0.28rem 0.08rem 0.12rem;
+  font-size: 0.7rem;
+}
+
+.quest-list-scroll {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 4rem);
+}
+
+.task-note-card,
+.guild-request-card,
+.notice-card,
+.calendar-event-card,
+.calendar-task-card,
+.latest-bulletin-card {
+  border-width: 2px;
+  box-shadow: 2px 2px 0 #000;
+}
+
+.task-note-card .quest-btn-primary,
+.task-note-card .quest-btn-secondary,
+.task-note-card .quest-btn-ghost,
+.guild-request-card .quest-btn-primary,
+.guild-request-card .quest-btn-secondary,
+.guild-request-card .quest-btn-ghost,
+.calendar-board .quest-btn-primary,
+.calendar-board .quest-btn-secondary,
+.calendar-board .quest-btn-ghost {
+  min-height: 36px;
+  padding: 0.28rem 0.45rem;
+  font-size: 0.7rem;
+}
+
+.notebook-stat-chip {
+  min-height: 34px;
+  gap: 0.32rem;
+  padding: 0.18rem 0.45rem;
+  font-size: 0.58rem;
+}
+
+.notebook-stat-chip strong {
+  font-size: 0.78rem;
+}
+
+.calendar-day-cell {
+  min-height: 44px;
+  gap: 0.12rem;
+  padding: 0.22rem;
+  box-shadow: 1px 1px 0 #000;
+}
+
+.calendar-day-number {
+  font-size: 0.72rem;
+}
+
+.calendar-day-count {
+  font-size: 0.5rem;
+  padding: 0 0.18rem;
+}
+
+.calendar-event-card,
+.calendar-task-card,
+.calendar-task-card.is-compact {
+  padding: 0.45rem !important;
+}
+
+.calendar-tag {
+  min-height: 18px;
+  border-width: 1px;
+  padding: 0.02rem 0.24rem;
+  font-size: 0.56rem;
+  box-shadow: 1px 1px 0 #000;
+}
+
+.party-member-card {
+  min-height: 68px;
+}
+
+.latest-bulletin-card {
+  padding: 0.5rem !important;
+}
+
+.modal-panel {
+  max-height: calc(100dvh - 32px) !important;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.modal-panel.rpg-frame {
+  padding: 0.85rem !important;
+}
+
+.modal-panel footer {
+  position: sticky;
+  bottom: -0.85rem;
+  z-index: 2;
+  margin-inline: -0.85rem;
+  margin-bottom: -0.85rem;
+  padding: 0.65rem 0.85rem calc(env(safe-area-inset-bottom) + 0.65rem);
+  background:
+    linear-gradient(180deg, rgba(11, 16, 32, 0), var(--color-panel) 22%),
+    var(--color-panel);
+}
+
+.rpg-message-window {
+  bottom: calc(env(safe-area-inset-bottom) + 4.65rem);
+  min-height: 88px;
+  gap: 0.6rem;
+  padding: 0.9rem 0.9rem 0.72rem;
+  border-width: 3px;
+  box-shadow:
+    0 0 0 1px rgba(98, 184, 255, 0.45) inset,
+    0 0 0 4px rgba(0, 0, 0, 0.68),
+    3px 3px 0 #000;
+}
+
+.rpg-message-speaker {
+  min-height: 1.35rem;
+  border-width: 2px;
+  padding: 0.08rem 0.55rem;
+  font-size: 0.72rem;
+  box-shadow:
+    0 0 0 1px #000 inset,
+    2px 2px 0 #000;
+}
+
+.rpg-message-avatar {
+  width: 70px;
+  height: 58px;
+  border-width: 2px;
+}
+
+.rpg-message-text {
+  font-size: clamp(0.8rem, 2.3vw, 1rem);
+  line-height: 1.42;
+}
+
+.rpg-message-rewards span {
+  min-height: 24px;
+  padding: 0.12rem 0.4rem;
+  font-size: 0.74rem;
+}
+
+@media (min-width: 1024px) {
+  .rpg-message-window {
+    bottom: 0.85rem;
+    min-height: 94px;
+    width: min(840px, calc(100vw - 560px));
+  }
+}
+
+@media (max-width: 640px) {
+  .guild-entry-screen {
+    padding-top: 0.5rem;
+    padding-bottom: calc(env(safe-area-inset-bottom) + 0.75rem);
+  }
+
+  .guild-gate-card {
+    margin-block: 0;
+  }
+
+  .avatar-choice {
+    min-height: 92px;
+    padding: 0.32rem 0.25rem;
+  }
+
+  .avatar-choice-label {
+    font-size: 0.68rem;
+  }
+
+  .avatar-choice-selected {
+    min-height: 14px;
+    font-size: 0.56rem;
+  }
+
+  .avatar-choice .avatar-sprite-xl {
+    width: min(72px, 34vw);
+    height: 48px;
+  }
+
+  .board-hero {
+    min-height: 48px;
+  }
+
+  .quick-filter-bar {
+    min-height: 38px;
+  }
+
+  .quest-btn-primary,
+  .quest-btn-secondary,
+  .quest-btn-ghost {
+    min-height: 38px;
+    padding: 0.34rem 0.58rem;
+    font-size: 0.72rem;
+  }
+
+  .quest-input {
+    min-height: 38px;
+    padding: 0.42rem 0.55rem;
+    font-size: 0.78rem;
+  }
+
+  .quest-card-dense {
+    min-height: 112px;
+    padding: 0.42rem !important;
+  }
+
+  .quest-card-row {
+    grid-template-columns: minmax(0, 1fr) 62px;
+    gap: 0.32rem;
+  }
+
+  .quest-card-title {
+    font-size: 0.86rem;
+    line-height: 1.14;
+  }
+
+  .quest-card-meta {
+    font-size: 0.62rem;
+    line-height: 1.18;
+  }
+
+  .quest-gauge-inline {
+    margin-top: 0.18rem;
+    font-size: 0.62rem;
+  }
+
+  .quest-card-facts {
+    gap: 0.2rem;
+    margin-top: 0.22rem;
+  }
+
+  .quest-fact {
+    padding: 0.12rem 0.2rem;
+  }
+
+  .quest-fact span {
+    font-size: 0.48rem;
+  }
+
+  .quest-fact strong {
+    font-size: 0.6rem;
+  }
+
+  .quest-card-side .quest-btn-ghost,
+  .quest-action-spacer {
+    min-height: 34px;
+  }
+
+  .quest-card-side .quest-btn-ghost {
+    font-size: 0.64rem;
+  }
+
+  .quest-card-side .quest-rank-panel strong,
+  .quest-rank-panel strong {
+    font-size: 1.08rem;
+  }
+
+  .quest-member-field {
+    min-height: 32px;
+  }
+
+  .quest-list-scroll {
+    padding-bottom: calc(env(safe-area-inset-bottom) + 3.7rem);
+  }
+
+  .notebook-stat-chip {
+    min-height: 32px;
+  }
+
+  .calendar-day-cell {
+    min-height: 34px;
+    padding: 0.16rem;
+  }
+
+  .calendar-day-number {
+    font-size: 0.64rem;
+  }
+
+  .calendar-event-card,
+  .calendar-task-card,
+  .calendar-task-card.is-compact {
+    padding: 0.38rem !important;
+  }
+
+  .modal-panel {
+    max-height: calc(100dvh - 18px) !important;
+  }
+
+  .modal-panel.rpg-frame {
+    padding: 0.7rem !important;
+  }
+
+  .modal-panel footer {
+    bottom: -0.7rem;
+    margin-inline: -0.7rem;
+    margin-bottom: -0.7rem;
+    padding: 0.55rem 0.7rem calc(env(safe-area-inset-bottom) + 0.55rem);
+  }
+
+  .rpg-message-window {
+    bottom: calc(env(safe-area-inset-bottom) + 4.25rem);
+    min-height: 78px;
+    grid-template-columns: minmax(0, 1fr) 48px auto;
+    gap: 0.45rem;
+    padding: 0.78rem 0.62rem 0.58rem;
+  }
+
+  .rpg-message-avatar {
+    width: 48px;
+    height: 42px;
+  }
+
+  .rpg-message-text {
+    font-size: 0.78rem;
+    line-height: 1.36;
+  }
 }
 
 @keyframes complete-pop {

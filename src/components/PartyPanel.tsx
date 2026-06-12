@@ -31,25 +31,25 @@ export function PartyPanel({
   className = "",
 }: PartyPanelProps) {
   return (
-    <aside className={`rpg-frame p-3 flex flex-col ${className}`}>
-      <header className="mb-2 pb-2 border-b border-[var(--color-gold)]/20">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="pixel-window-title text-sm sm:text-base font-semibold">
+    <aside className={`rpg-frame p-2.5 flex flex-col ${className}`}>
+      <header className="mb-1.5 pb-1.5 border-b border-[var(--color-gold)]/20">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="pixel-window-title text-[13px] sm:text-sm font-semibold">
             冒険者パーティ
           </h2>
-          <span className="pixel-chip px-2 py-1 text-xs text-slate-300">
+          <span className="pixel-chip px-1.5 py-0.5 text-[10px] text-slate-300">
             {staff.length} / 10
           </span>
         </div>
-        <p className="text-[10px] text-slate-500 mt-0.5 tracking-wider">
+        <p className="text-[9px] text-slate-500 mt-0.5 tracking-wider">
           操作する冒険者を選択
         </p>
       </header>
 
       {loading ? (
-        <div className="flex flex-col gap-3 flex-1">
+        <div className="flex flex-col gap-2 flex-1">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-24 border-2 border-white/20 bg-white/5 animate-pulse shadow-[3px_3px_0_#000]" />
+            <div key={i} className="h-[72px] border-2 border-white/20 bg-white/5 animate-pulse shadow-[2px_2px_0_#000]" />
           ))}
         </div>
       ) : staff.length === 0 ? (
@@ -57,7 +57,7 @@ export function PartyPanel({
           ギルド名簿にスタッフが登録されていません。migration 002を実行してください。
         </p>
       ) : (
-        <ul className="flex min-h-0 flex-1 flex-col gap-2 custom-scroll overflow-y-auto max-h-[50vh] lg:max-h-none">
+        <ul className="flex min-h-0 flex-1 flex-col gap-1.5 custom-scroll overflow-y-auto max-h-[50vh] lg:max-h-none">
           {staff.map((member, i) => {
             const isSelected = member.name === selectedPlayer;
             const expProgress = member.exp % 100;
@@ -66,9 +66,9 @@ export function PartyPanel({
                 <button
                   type="button"
                   onClick={() => onSelectPlayer(member.name)}
-                  className={`party-member-card group tap-card pixel-menu-button w-full p-2 border text-left transition-all duration-300 animate-fade-up ${
+                  className={`party-member-card group tap-card pixel-menu-button w-full p-1.5 border text-left transition-all duration-300 animate-fade-up ${
                     isSelected
-                      ? "is-selected pl-7"
+                      ? "is-selected pl-6"
                       : "border-white/20 bg-black/20 hover:border-[var(--color-gold)]/60 hover:bg-[var(--color-panel)]/80"
                   }`}
                   style={{
@@ -76,7 +76,7 @@ export function PartyPanel({
                     animationFillMode: "both",
                   }}
                 >
-                  <div className="flex items-center gap-2 mb-1.5">
+                  <div className="flex items-center gap-1.5 mb-1">
                     <AvatarSprite
                       avatarType={member.avatarType}
                       fallback={member.avatar}
@@ -90,7 +90,7 @@ export function PartyPanel({
                       }`}
                     />
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-slate-100 truncate">
+                      <p className="text-[13px] font-medium text-slate-100 truncate">
                         Lv {member.level} {member.name}
                         {isSelected && (
                           <span className="ml-1.5 text-[10px] text-[var(--color-gold-bright)]">
@@ -98,12 +98,12 @@ export function PartyPanel({
                           </span>
                         )}
                       </p>
-                      <p className="text-[10px] text-[var(--color-gold-dim)] truncate">
+                      <p className="text-[9px] text-[var(--color-gold-dim)] truncate">
                         {member.title} · {member.role}
                       </p>
                     </div>
                     <span
-                      className={`text-[10px] font-medium ${STATUS_LABEL[member.status].color}`}
+                      className={`text-[9px] font-medium ${STATUS_LABEL[member.status].color}`}
                     >
                       {STATUS_LABEL[member.status].text}
                     </span>
@@ -113,7 +113,7 @@ export function PartyPanel({
                     value={expProgress}
                     color="from-[var(--color-gold-dim)] to-[var(--color-gold-bright)]"
                   />
-                  <div className="grid grid-cols-2 gap-1.5">
+                  <div className="grid grid-cols-2 gap-1">
                     <Bar
                       label="HP"
                       value={member.hp}
@@ -132,11 +132,11 @@ export function PartyPanel({
         </ul>
       )}
 
-      <footer className="mt-2 pt-2 border-t border-[var(--color-gold)]/15 text-center">
+      <footer className="mt-1.5 pt-1.5 border-t border-[var(--color-gold)]/15 text-center">
         <p className="text-[10px] text-slate-500 tracking-wider">
           操作中の冒険者
         </p>
-        <p className="pixel-title text-base font-semibold gold-text mt-1 truncate px-2">
+        <p className="pixel-title text-sm font-semibold gold-text mt-0.5 truncate px-2">
           {selectedPlayer || "—"}
         </p>
       </footer>
@@ -154,12 +154,12 @@ function Bar({
   color: string;
 }) {
   return (
-    <div className="mt-1.5">
-      <div className="flex justify-between text-[9px] text-slate-500 mb-0.5">
+    <div className="mt-1">
+      <div className="flex justify-between text-[8px] text-slate-500 mb-0.5">
         <span>{label}</span>
         <span>{value}%</span>
       </div>
-      <div className="h-2 border border-white/20 bg-black/60 overflow-hidden">
+      <div className="h-1.5 border border-white/20 bg-black/60 overflow-hidden">
         <div
           className={`h-full bg-gradient-to-r ${color} transition-all duration-500`}
           style={{ width: `${value}%` }}
