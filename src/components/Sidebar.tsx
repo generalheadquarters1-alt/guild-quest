@@ -5,10 +5,9 @@ type NavId =
   | "my"
   | "calendar"
   | "expedition"
-  | "activity"
   | "stats"
   | "settings";
-type SidebarFilter = "succession" | null;
+type SidebarFilter = null;
 
 interface SidebarProps {
   active: NavId;
@@ -53,8 +52,8 @@ export function Sidebar({
     {
       key: "notices",
       icon: "⚠",
-      label: "気付きの書",
-      sub: "NOTICE",
+      label: "ギルド速報",
+      sub: "ALERT",
       selected: active === "notices",
       onSelect: () => {
         onNavigate("notices");
@@ -84,17 +83,6 @@ export function Sidebar({
       },
     },
     {
-      key: "succession",
-      icon: "🛡️",
-      label: "助っ人募集",
-      sub: "HELP WANTED",
-      selected: active === "board" && quickFilter === "succession",
-      onSelect: () => {
-        onNavigate("board");
-        onQuickFilter("succession");
-      },
-    },
-    {
       key: "expedition",
       icon: "🧭",
       label: "遠征",
@@ -113,17 +101,6 @@ export function Sidebar({
       selected: active === "calendar",
       onSelect: () => {
         onNavigate("calendar");
-        onQuickFilter(null);
-      },
-    },
-    {
-      key: "adventure",
-      icon: "📖",
-      label: "冒険の記録",
-      sub: "EVENT LOG",
-      selected: active === "activity",
-      onSelect: () => {
-        onNavigate("activity");
         onQuickFilter(null);
       },
     },

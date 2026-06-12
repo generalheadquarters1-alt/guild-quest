@@ -1,27 +1,31 @@
 import type { ReactNode } from "react";
 import {
-  daysUntil,
   formatCalendarDate,
+  formatEventTime,
   isPastDeadline,
   type CalendarEvent,
 } from "../data/calendar";
-import type { PartyMember, Quest } from "../data/quests";
+import {
+  QUEST_DIFFICULTY_LABELS,
+  type PartyMember,
+  type Quest,
+} from "../data/quests";
 import {
   canAcceptQuest,
-  canBecomeSuccessor,
   canMarkComplete,
   canRequestSuccession,
   getPriorityScore,
-  isEmptySlot,
   isPlayerOnQuest,
+  isQuestFull,
 } from "../lib/questUtils";
-import { QuestStatusBadge } from "./QuestStatusBadge";
 import { AvatarSprite } from "./AvatarSprite";
+import { QuestStatusBadge } from "./QuestStatusBadge";
 
 const STATUS_RING: Record<Quest["status"], string> = {
   open: "quest-card-open",
+  recruiting: "quest-card-recruiting",
+  help_wanted: "quest-card-succession",
   in_progress: "quest-card-in-progress",
-  succession_needed: "quest-card-succession",
   completed: "quest-card-completed",
 };
 
@@ -42,64 +46,12 @@ interface QuestCardProps {
   featured?: boolean;
 }
 
-function MemberField({
-  label,
-  names,
-  staffByName,
-  highlight,
-  className = "",
-}: {
-  label: string;
-  names: string[];
-  staffByName: ReadonlyMap<string, PartyMember>;
-  highlight?: boolean;
-  className?: string;
-}) {
-  const members = names.filter((name) => !isEmptySlot(name));
-  return (
-    <div className={`quest-member-field min-w-0 border border-white/6 bg-black/18 px-2.5 py-2 shadow-[2px_2px_0_rgba(0,0,0,0.22)] ${className}`}>
-      <span className="quest-pixel-label block text-[10px] tracking-wider text-[var(--color-gold-dim)]/90">
-        {label}
-      </span>
-      {members.length === 0 ? (
-        <span className="block text-xs sm:text-sm truncate text-slate-500 italic">
-          —
-        </span>
-      ) : (
-        <span className="mt-1 flex min-w-0 flex-wrap gap-1">
-          {members.map((name) => {
-            const member = staffByName.get(name);
-            return (
-              <span
-                key={name}
-                className={`quest-member-chip ${
-                  highlight ? "is-highlighted" : ""
-                }`}
-              >
-                <AvatarSprite
-                  avatarType={member?.avatarType}
-                  fallback={member?.avatar ?? "⚔️"}
-                  alt={name}
-                  size="xs"
-                  useFallbackWhenMissing={!member}
-                />
-                <span className="truncate">{name}</span>
-              </span>
-            );
-          })}
-        </span>
-      )}
-    </div>
-  );
-}
-
 export function QuestCard({
   quest,
   index,
   selectedPlayer,
   staffByName,
   onAccept,
-  onBecomeSuccessor,
   onRequestSuccession,
   onRequestComplete,
   onOpenDetail,
@@ -107,88 +59,58 @@ export function QuestCard({
   disabled = false,
   featured = false,
 }: QuestCardProps) {
-  const showAccept = canAcceptQuest(quest);
-  const showSuccessor = canBecomeSuccessor(quest, selectedPlayer);
-  const showRequestSuccession = canRequestSuccession(quest, selectedPlayer);
-  const showComplete = canMarkComplete(quest, selectedPlayer);
-  const needsSuccessor = quest.status === "succession_needed";
   const isMine = isPlayerOnQuest(quest, selectedPlayer);
-  const isNew =
-    quest.createdAt != null &&
-    Date.now() - new Date(quest.createdAt).getTime() < 1000 * 60 * 60 * 24;
-  const successorSlotsFilled = [quest.successor1, quest.successor2].filter(
-    (slot) => !isEmptySlot(slot),
-  ).length;
-  const almostFullParty =
-    !isEmptySlot(quest.challenger) &&
-    successorSlotsFilled === 1 &&
-    quest.status !== "completed";
-
-  const hasPrimaryAction =
-    showAccept || showSuccessor || showRequestSuccession || showComplete;
-  const primaryAction = showComplete
+  const full = isQuestFull(quest);
+  const canJoin = canAcceptQuest(quest) && !isMine && !full;
+  const canComplete = canMarkComplete(quest, selectedPlayer);
+  const canAskHelp = canRequestSuccession(quest, selectedPlayer);
+  const primaryAction = canComplete
     ? {
         label: "討伐完了",
         variant: "xp" as const,
         onClick: () => onRequestComplete(quest.id),
       }
-    : showSuccessor
+    : canJoin
       ? {
-          label: "継承する",
-          variant: "mana" as const,
-          onClick: () => onBecomeSuccessor(quest.id),
+          label: "参加する",
+          variant: "gold" as const,
+          onClick: () => onAccept(quest.id),
         }
-      : showRequestSuccession
-        ? {
-            label: "継承を依頼",
-            variant: "rare" as const,
-            onClick: () => onRequestSuccession(quest.id),
-          }
-        : showAccept
-          ? {
-              label: "挑戦する",
-              variant: "gold" as const,
-              onClick: () => onAccept(quest.id),
-            }
-          : null;
-  const priorityScore = getPriorityScore(quest);
+      : null;
+  const deadlinePast =
+    isPastQuestDue(quest) ||
+    (relatedEvent?.eventType === "deadline" ? isPastDeadline(relatedEvent) : false);
+  const dueLabel = quest.dueAt
+    ? formatQuestDueAt(quest.dueAt)
+    : relatedEvent
+      ? formatCalendarDate(relatedEvent.eventDate)
+      : "未設定";
   const dangerClass =
-    priorityScore >= 20
+    deadlinePast || getPriorityScore(quest) >= 20
       ? "quest-card-danger-high"
-      : priorityScore >= 12
+      : getPriorityScore(quest) >= 12
         ? "quest-card-danger-mid"
         : "";
-  const status = getStatusPresentation(quest);
-  const questIcon = getQuestIcon(quest);
-  const successorLabel =
-    needsSuccessor
-      ? "助っ人募集中"
-      : successorSlotsFilled > 0
-        ? `助っ人 ${successorSlotsFilled}名`
-        : "助っ人なし";
-  const deadlinePast = relatedEvent ? isPastDeadline(relatedEvent) : false;
-  const deadlineSoon =
-    relatedEvent?.eventType === "deadline" &&
-    !deadlinePast &&
-    daysUntil(relatedEvent.eventDate) <= 3;
 
   return (
     <article
-      className={`quest-card quest-card-compact quest-card-dense tap-card p-3 transition-all duration-300 animate-fade-up ${STATUS_RING[quest.status]} ${dangerClass} ${
-        quest.urgency >= 4 ? "quest-card-emergency" : ""
-      } ${featured ? "quest-card-featured" : ""}`}
+      className={`quest-card quest-card-compact quest-card-dense tap-card p-3 transition-all duration-300 animate-fade-up ${
+        STATUS_RING[quest.status]
+      } ${dangerClass} ${deadlinePast ? "quest-card-overdue" : ""} ${
+        featured ? "quest-card-featured" : ""
+      }`}
       style={{
-        animationDelay: `${index * 80}ms`,
+        animationDelay: `${index * 60}ms`,
         animationFillMode: "both",
       }}
     >
       <div className="quest-card-row">
         <div className="quest-card-left">
-          <div className={`notice-ribbon ${status.ribbonClass}`}>
-            {status.label}
+          <div className={`notice-ribbon ${getRibbonClass(quest, deadlinePast)}`}>
+            {deadlinePast ? "期限超過" : getStatusLabel(quest)}
           </div>
           <div className="quest-notice-icon compact-icon" aria-hidden>
-            <span>{questIcon}</span>
+            <span>{getQuestIcon(quest, deadlinePast)}</span>
           </div>
         </div>
 
@@ -197,68 +119,72 @@ export function QuestCard({
             <h3 className="pixel-title quest-card-title text-slate-50">
               {quest.title}
             </h3>
-            <QuestStatusBadge status={quest.status} />
+            <QuestStatusBadge status={quest.status} overdue={deadlinePast} />
           </div>
 
-          <p className="quest-card-meta">
-            推定 {quest.estimatedTime}
-            <span aria-hidden> / </span>
-            <span>{successorLabel}</span>
-            {(isNew || isMine || almostFullParty) && (
-              <>
-                <span aria-hidden> / </span>
-                <span>
-                  {isNew ? "新着" : isMine ? "自分の依頼" : "あと1枠"}
-                </span>
-              </>
+          <div className="quest-card-facts">
+            <Fact label="Lv" value={QUEST_DIFFICULTY_LABELS[quest.difficulty]} />
+            <Fact label="推定" value={quest.estimatedTime} />
+            <Fact label="納期" value={dueLabel} danger={deadlinePast} />
+            <Fact
+              label="参加"
+              value={`${quest.participants.length}/${quest.requiredMembers}`}
+              danger={full && quest.status !== "completed"}
+            />
+          </div>
+
+          <div className="quest-party-line">
+            <span className="quest-pixel-label text-[10px]">参加メンバー</span>
+            {quest.participants.length === 0 ? (
+              <span className="text-xs text-stone-500">まだ誰も参加していません</span>
+            ) : (
+              <div className="flex min-w-0 flex-wrap gap-1">
+                {quest.participants.map((name) => {
+                  const member = staffByName.get(name);
+                  return (
+                    <span
+                      key={name}
+                      className={`quest-member-chip ${name === selectedPlayer ? "is-highlighted" : ""}`}
+                    >
+                      <AvatarSprite
+                        avatarType={member?.avatarType}
+                        fallback={member?.avatar ?? "⚔️"}
+                        alt={name}
+                        size="xs"
+                        useFallbackWhenMissing={!member}
+                      />
+                      <span className="truncate">{name}</span>
+                    </span>
+                  );
+                })}
+              </div>
             )}
-          </p>
+          </div>
 
           {relatedEvent && (
             <div className="mt-1 flex flex-wrap gap-1">
               <span className="calendar-tag text-[10px]">📅 関連予定あり</span>
               {relatedEvent.eventType === "deadline" && (
-                <span className={`calendar-tag text-[10px] ${deadlinePast || deadlineSoon ? "is-danger" : ""}`}>
+                <span className={`calendar-tag text-[10px] ${deadlinePast ? "is-danger" : ""}`}>
                   {deadlinePast
                     ? "期限超過"
-                    : `期限 ${formatCalendarDate(relatedEvent.eventDate)}`}
+                    : `期限 ${formatCalendarDate(relatedEvent.eventDate)} ${formatEventTime(relatedEvent)}`}
                 </span>
               )}
             </div>
           )}
-
-          <div className="quest-gauge-inline">
-            <InlineGauge label="緊急" value={quest.urgency} />
-            <InlineGauge label="重要" value={quest.importance} />
-          </div>
-
-          <div className="quest-party-row">
-            <MemberField
-              label="挑戦者"
-              names={[quest.challenger]}
-              staffByName={staffByName}
-              highlight
-              className="quest-member-challenger"
-            />
-            <MemberField
-              label="継承者"
-              names={[quest.successor1, quest.successor2]}
-              staffByName={staffByName}
-              className="quest-member-successors"
-            />
-          </div>
         </div>
 
         <aside className="quest-card-side">
           <div className="quest-rank-panel">
             <p className="quest-pixel-label text-[10px]">依頼ランク</p>
-            <strong>{priorityScore}</strong>
+            <strong>{getPriorityScore(quest)}</strong>
             <span>
-              ({quest.urgency}×{quest.importance})
+              {quest.urgency}×{quest.importance}
             </span>
           </div>
           <div className="quest-actions">
-            {primaryAction && (
+            {primaryAction ? (
               <ActionButton
                 variant={primaryAction.variant}
                 onClick={primaryAction.onClick}
@@ -266,9 +192,23 @@ export function QuestCard({
               >
                 {primaryAction.label}
               </ActionButton>
+            ) : (
+              <ActionButton variant="plain" onClick={() => undefined} disabled>
+                {full && quest.status !== "completed"
+                  ? "定員に達しています"
+                  : isMine
+                    ? "参加中"
+                    : "受付停止"}
+              </ActionButton>
             )}
-            {!hasPrimaryAction && (
-              <span className="quest-action-spacer" aria-hidden />
+            {canAskHelp && (
+              <ActionButton
+                variant="rare"
+                onClick={() => onRequestSuccession(quest.id)}
+                disabled={disabled}
+              >
+                助っ人募集
+              </ActionButton>
             )}
             <ActionButton
               variant="plain"
@@ -283,63 +223,65 @@ export function QuestCard({
   );
 }
 
-function InlineGauge({ label, value }: { label: string; value: number }) {
+function Fact({
+  label,
+  value,
+  danger,
+}: {
+  label: string;
+  value: string;
+  danger?: boolean;
+}) {
   return (
-    <span className="inline-flex items-center gap-1">
-      <span className="quest-pixel-label text-[10px] tracking-wider text-[var(--color-gold-dim)]/90">
-        {label}
-      </span>
-      <span className="flex gap-0.5" aria-label={`${label} ${value}`}>
-        {[1, 2, 3, 4, 5].map((score) => (
-          <span
-            key={score}
-            className={score <= value ? (value >= 4 ? "text-red-800" : "text-amber-800") : "text-stone-400"}
-          >
-            ◆
-          </span>
-        ))}
-      </span>
+    <span className={`quest-fact ${danger ? "is-danger" : ""}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
     </span>
   );
 }
 
-function getQuestIcon(quest: Quest) {
-  if (quest.status === "completed") return "✓";
-  if (quest.status === "succession_needed") return "🛡️";
-  if (quest.urgency >= 4) return "⚔️";
-  if (quest.status === "open") return "🎁";
-  return "📜";
+function getStatusLabel(quest: Quest) {
+  if (quest.status === "open") return "未受注";
+  if (quest.status === "recruiting") return "募集中";
+  if (quest.status === "help_wanted") return "助っ人募集";
+  if (quest.status === "in_progress") return "挑戦中";
+  return "完了";
 }
 
-function getStatusPresentation(quest: Quest) {
-  if (quest.status === "completed") {
-    return {
-      label: "達成済み",
-      ribbonClass: "notice-ribbon-completed",
-    };
+function getRibbonClass(quest: Quest, overdue: boolean) {
+  if (overdue) return "notice-ribbon-danger";
+  if (quest.status === "completed") return "notice-ribbon-completed";
+  if (quest.status === "help_wanted") return "notice-ribbon-rare";
+  if (quest.status === "open") return "notice-ribbon-open";
+  if (quest.status === "recruiting") return "notice-ribbon-recruiting";
+  return "notice-ribbon-progress";
+}
+
+function getQuestIcon(quest: Quest, overdue: boolean) {
+  if (overdue) return "!";
+  if (quest.status === "completed") return "✓";
+  if (quest.status === "help_wanted") return "🛡️";
+  if (quest.status === "recruiting") return "👥";
+  if (quest.status === "open") return "📜";
+  return "⚔️";
+}
+
+function isPastQuestDue(quest: Quest) {
+  if (!quest.dueAt || quest.status === "completed") return false;
+  return new Date(quest.dueAt).getTime() < Date.now();
+}
+
+function formatQuestDueAt(value: string) {
+  try {
+    return new Intl.DateTimeFormat("ja-JP", {
+      month: "numeric",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(value));
+  } catch {
+    return value;
   }
-  if (quest.urgency >= 4) {
-    return {
-      label: "緊急!!",
-      ribbonClass: "notice-ribbon-danger",
-    };
-  }
-  if (quest.status === "succession_needed") {
-    return {
-      label: "助っ人募集",
-      ribbonClass: "notice-ribbon-rare",
-    };
-  }
-  if (quest.status === "open") {
-    return {
-      label: "未受注",
-      ribbonClass: "notice-ribbon-open",
-    };
-  }
-  return {
-    label: "挑戦中",
-    ribbonClass: "notice-ribbon-progress",
-  };
 }
 
 function ActionButton({
@@ -350,12 +292,11 @@ function ActionButton({
 }: {
   children: ReactNode;
   onClick: () => void;
-  variant: "gold" | "mana" | "xp" | "rare" | "plain";
+  variant: "gold" | "xp" | "rare" | "plain";
   disabled?: boolean;
 }) {
   const styles = {
     gold: "border-[var(--color-gold)]/50 text-[var(--color-gold-bright)] hover:bg-[var(--color-gold)]/15",
-    mana: "border-[var(--color-mana)]/50 text-[var(--color-mana)] hover:bg-[var(--color-mana)]/10",
     xp: "border-[var(--color-xp)]/50 text-[var(--color-xp)] hover:bg-[var(--color-xp)]/10",
     rare: "border-[var(--color-rare)]/50 text-[var(--color-rare)] hover:bg-[var(--color-rare)]/10",
     plain: "border-stone-700/45 text-stone-800 hover:bg-stone-900/10",
@@ -366,9 +307,9 @@ function ActionButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`quest-btn-ghost min-h-11 w-full sm:w-auto px-4 py-2 text-sm font-semibold transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-45 ${styles[variant]}`}
+      className={`quest-btn-ghost min-h-11 w-full sm:w-auto px-3 py-2 text-xs font-semibold transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-45 ${styles[variant]}`}
     >
-      <span className="mr-1.5" aria-hidden>
+      <span className="mr-1" aria-hidden>
         ▶
       </span>
       {children}

@@ -7,9 +7,10 @@ import {
 
 const STATUS_ORDER: Record<QuestStatus, number> = {
   open: 0,
-  succession_needed: 1,
-  in_progress: 2,
-  completed: 3,
+  recruiting: 1,
+  help_wanted: 2,
+  in_progress: 3,
+  completed: 4,
 };
 
 export function isEmptySlot(value: string): boolean {
@@ -36,10 +37,8 @@ export function getQuestBaseExp(quest: Quest): number {
 
 export function getQuestGuildExp(quest: Quest): number {
   const base = getQuestBaseExp(quest);
-  const successors = [quest.successor1, quest.successor2].filter(
-    (slot) => !isEmptySlot(slot),
-  ).length;
-  return base + successors * Math.floor(base * 0.6);
+  const helpers = Math.max(0, quest.participants.length - 1);
+  return base + helpers * Math.floor(base * 0.6);
 }
 
 export function sortCompletedLog(
@@ -52,11 +51,7 @@ export function sortCompletedLog(
 }
 
 export function isPlayerOnQuest(quest: Quest, playerName: string): boolean {
-  return (
-    quest.challenger === playerName ||
-    quest.successor1 === playerName ||
-    quest.successor2 === playerName
-  );
+  return quest.participants.includes(playerName);
 }
 
 export function countMyQuests(quests: Quest[], playerName: string): number {
@@ -64,20 +59,23 @@ export function countMyQuests(quests: Quest[], playerName: string): number {
 }
 
 export function deriveStatusAfterRosterChange(quest: Quest): QuestStatus {
-  if (isEmptySlot(quest.challenger)) return "open";
-  if (isEmptySlot(quest.successor1) || isEmptySlot(quest.successor2)) {
-    return "succession_needed";
-  }
-  return "in_progress";
+  if (quest.status === "completed") return "completed";
+  const count = quest.participants.length;
+  if (count <= 0) return "open";
+  if (count >= quest.requiredMembers) return "in_progress";
+  if (quest.status === "help_wanted") return "help_wanted";
+  return "recruiting";
 }
 
 export function canAcceptQuest(quest: Quest): boolean {
-  return isEmptySlot(quest.challenger);
+  if (quest.status === "completed") return false;
+  return quest.participants.length < quest.requiredMembers;
 }
 
 export function canBecomeSuccessor(quest: Quest, playerName: string): boolean {
   if (isPlayerOnQuest(quest, playerName)) return false;
-  return isEmptySlot(quest.successor1) || isEmptySlot(quest.successor2);
+  if (quest.status === "completed") return false;
+  return quest.participants.length < quest.requiredMembers;
 }
 
 export function canRequestSuccession(
@@ -85,14 +83,20 @@ export function canRequestSuccession(
   playerName: string,
 ): boolean {
   return (
-    quest.challenger === playerName &&
-    quest.status === "in_progress"
+    isPlayerOnQuest(quest, playerName) &&
+    quest.status !== "completed" &&
+    quest.participants.length < quest.requiredMembers
   );
 }
 
 export function canMarkComplete(quest: Quest, playerName: string): boolean {
   if (quest.status === "open") return false;
+  if (quest.status === "completed") return false;
   return isPlayerOnQuest(quest, playerName);
+}
+
+export function isQuestFull(quest: Quest): boolean {
+  return quest.participants.length >= quest.requiredMembers;
 }
 
 export function formatCompletedDate(iso: string): string {

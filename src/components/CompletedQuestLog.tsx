@@ -1,7 +1,6 @@
 import type { CompletedQuestEntry } from "../data/quests";
+import { QUEST_DIFFICULTY_LABELS } from "../data/quests";
 import { formatCompletedDate } from "../lib/questUtils";
-import { LevelBadge } from "./LevelBadge";
-import { PriorityBadge } from "./PriorityBadge";
 import { QuestSecondaryActions } from "./QuestSecondaryActions";
 
 interface CompletedQuestLogProps {
@@ -40,13 +39,18 @@ export function CompletedQuestLog({
               </p>
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
-              <LevelBadge level={entry.quest.level} />
-              <PriorityBadge priority={entry.quest.priority} />
+              <span className="pixel-chip px-2 py-1 text-[10px] text-[var(--color-gold-bright)]">
+                Lv {QUEST_DIFFICULTY_LABELS[entry.quest.difficulty]}
+              </span>
             </div>
           </div>
           <p className="text-[10px] text-slate-500 mt-2">
-            挑戦者:{" "}
-            <span className="text-slate-400">{entry.quest.challenger}</span>
+            参加:{" "}
+            <span className="text-slate-400">
+              {entry.quest.participants.length > 0
+                ? entry.quest.participants.join(" / ")
+                : "—"}
+            </span>
           </p>
           <QuestSecondaryActions
             className="mt-2"

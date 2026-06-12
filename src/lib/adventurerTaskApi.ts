@@ -4,9 +4,15 @@ import {
   type AdventurerTask,
   type AdventurerTaskFormData,
   type AdventurerTaskStatus,
+  type QuestPublishFormData,
 } from "../data/adventurerTasks";
 import { getExpeditionTicketsForRank } from "../data/expeditions";
-import type { Quest, QuestLevel, Priority } from "../data/quests";
+import {
+  ESTIMATED_MINUTE_OPTIONS,
+  QUEST_LEVEL_BY_DIFFICULTY,
+  type Quest,
+  type Priority,
+} from "../data/quests";
 import { awardExpeditionTickets } from "./expeditionApi";
 import { insertQuestLog } from "./questLogApi";
 import { rowToQuest, type QuestRow } from "./questMapper";
@@ -169,6 +175,7 @@ export async function completeAdventurerTask(
 export async function delegateTaskToQuest(
   task: AdventurerTask,
   actorName: string,
+  form: QuestPublishFormData,
 ): Promise<{ task: AdventurerTask; quest: Quest }> {
   if (task.questId != null) {
     const quest = await fetchQuestById(task.questId);
@@ -176,23 +183,35 @@ export async function delegateTaskToQuest(
     return { task: updatedTask, quest };
   }
 
+  const linkedEventId = await resolveQuestDeadlineEvent(task, form, actorName);
+  const dueAt = toDueIso(form.dueDate, form.dueTime);
+  const priority = getQuestPriorityFromTask({
+    ...task,
+    priority: form.difficulty,
+    importance: task.importance,
+  });
   const { data: questData, error: questError } = await requireSupabase()
     .from("quests")
     .insert({
       requester: task.ownerName,
-      title: task.title,
-      level: getQuestLevelFromTask(task),
-      priority: getQuestPriorityFromTask(task),
+      title: form.title.trim(),
+      level: QUEST_LEVEL_BY_DIFFICULTY[form.difficulty],
+      difficulty: form.difficulty,
+      priority,
       urgency: task.priority,
       importance: task.importance,
-      estimated_time: null,
-      description: task.description || null,
+      estimated_time: formatEstimatedLabel(form.estimatedMinutes),
+      estimated_minutes: form.estimatedMinutes,
+      due_at: dueAt,
+      description: form.description.trim() || null,
       challenger: null,
       successor1: null,
       successor2: null,
+      participants: [],
+      required_members: form.requiredMembers,
       status: "open",
       completed_at: null,
-      linked_event_id: task.calendarEventId,
+      linked_event_id: linkedEventId,
     })
     .select("*")
     .single();
@@ -200,12 +219,25 @@ export async function delegateTaskToQuest(
   if (questError) throw questError;
   const quest = rowToQuest(questData as QuestRow);
 
+  if (linkedEventId != null) {
+    const { error: eventLinkError } = await requireSupabase()
+      .from("calendar_events")
+      .update({
+        linked_quest_id: quest.id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", linkedEventId);
+    if (eventLinkError) throw eventLinkError;
+  }
+
   const { data: taskData, error: taskError } = await requireSupabase()
     .from("adventurer_tasks")
     .update({
       status: "delegated",
       is_public: true,
       quest_id: quest.id,
+      calendar_event_id: linkedEventId,
+      due_date: form.dueDate,
       updated_at: new Date().toISOString(),
     })
     .eq("id", task.id)
@@ -220,7 +252,7 @@ export async function delegateTaskToQuest(
     questTitle: quest.title,
     action: "task_delegated",
     actorName,
-    details: "冒険者手帳から依頼書化しました。",
+    details: "依頼書設定を通してギルド依頼へ掲載しました。",
   });
 
   return { task: updatedTask, quest };
@@ -292,37 +324,8 @@ async function resolveTaskCalendarEvent(
   ownerName: string,
 ) {
   if (form.calendarEventId != null) return form.calendarEventId;
-  if (!form.dueDate) return null;
-
-  const { data, error } = await requireSupabase()
-    .from("calendar_events")
-    .insert({
-      title: `${form.title.trim() || "任務"} の納期`,
-      description: form.description || null,
-      event_date: form.dueDate,
-      start_time: null,
-      end_time: null,
-      event_type: "deadline",
-      importance: form.importance,
-      owner_name: ownerName,
-      created_by: ownerName,
-      linked_quest_id: null,
-      updated_at: new Date().toISOString(),
-    })
-    .select("id")
-    .single();
-
-  if (error) throw error;
-
-  await insertQuestLog({
-    questId: null,
-    questTitle: form.title,
-    action: "calendar_event_created",
-    actorName: ownerName,
-    details: "任務の納期として自動登録しました。",
-  });
-
-  return (data as { id: number }).id;
+  void ownerName;
+  return null;
 }
 
 function toTaskPayload(
@@ -366,10 +369,29 @@ function getQuestPriorityFromTask(task: AdventurerTask): Priority {
   return "C";
 }
 
-function getQuestLevelFromTask(task: AdventurerTask): QuestLevel {
-  const score = getTaskScore(task);
-  if (score >= 20) return "Hard";
-  if (score >= 12) return "Normal";
-  if (score >= 6) return "Easy";
-  return "Novice";
+async function resolveQuestDeadlineEvent(
+  task: AdventurerTask,
+  form: QuestPublishFormData,
+  actorName: string,
+) {
+  const existingEventId = task.calendarEventId;
+  if (existingEventId != null) return existingEventId;
+  void form;
+  void actorName;
+  return null;
+}
+
+function toDueIso(date: string, time: string) {
+  if (!date) return null;
+  const timeValue = time || "23:59";
+  const parsed = new Date(`${date}T${timeValue}`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+}
+
+function formatEstimatedLabel(minutes: number) {
+  return (
+    ESTIMATED_MINUTE_OPTIONS.find((option) => option.value === minutes)?.label ??
+    `${minutes}分`
+  );
 }

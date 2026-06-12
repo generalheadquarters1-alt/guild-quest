@@ -5,6 +5,7 @@ import {
   useState,
   type CSSProperties,
   type FormEvent,
+  type ReactNode,
 } from "react";
 import { ActivityLog } from "./components/ActivityLog";
 import { CompletedQuestLog } from "./components/CompletedQuestLog";
@@ -63,6 +64,7 @@ import {
   type AdventurerTask,
   type AdventurerTaskFormData,
   type AdventurerTaskTab,
+  type QuestPublishFormData,
 } from "./data/adventurerTasks";
 import {
   NOTICE_TYPE_LABELS,
@@ -77,7 +79,12 @@ import {
   type GuildRequestType,
 } from "./data/guildOperations";
 import { AVATAR_OPTIONS, DEFAULT_AVATAR_TYPE } from "./data/avatars";
-import { GUILD_STATS } from "./data/quests";
+import {
+  ESTIMATED_MINUTE_OPTIONS,
+  GUILD_STATS,
+  QUEST_DIFFICULTY_LABELS,
+  type QuestDifficulty,
+} from "./data/quests";
 import type { CompletedQuestEntry, PartyMember, Quest } from "./data/quests";
 import { useExpeditions } from "./hooks/useExpeditions";
 import { useCalendarEvents } from "./hooks/useCalendarEvents";
@@ -138,7 +145,6 @@ import {
   getQuestBaseExp,
   getQuestGuildExp,
   getPriorityScore,
-  isEmptySlot,
   isPlayerOnQuest,
   sortCompletedLog,
   sortQuests,
@@ -151,11 +157,16 @@ type NavId =
   | "my"
   | "calendar"
   | "expedition"
-  | "activity"
   | "stats"
   | "settings";
 type MobilePanel = "quests" | "party";
-type QuickFilter = "open" | "urgent" | "succession" | "mine" | "completed";
+type QuickFilter =
+  | "open"
+  | "recruiting"
+  | "help_wanted"
+  | "in_progress"
+  | "mine"
+  | "completed";
 type ToastTone = "success" | "error" | "info";
 type Toast = { id: number; message: string; tone: ToastTone };
 type DialogueTone = "guild" | "system" | "reward";
@@ -194,6 +205,10 @@ type TaskFormState =
   | { type: "edit"; taskId: number };
 
 type TaskDetailState =
+  | { type: "closed" }
+  | { type: "open"; taskId: number };
+
+type QuestPublishState =
   | { type: "closed" }
   | { type: "open"; taskId: number };
 
@@ -483,6 +498,9 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
   const [selectedPlayer, setSelectedPlayer] = useState(() =>
     loadSelectedPlayer(""),
   );
+  const [ownPlayerName, setOwnPlayerName] = useState(() =>
+    loadSelectedPlayer(""),
+  );
   const {
     resources,
     expeditions,
@@ -495,6 +513,9 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
   const [modal, setModal] = useState<ModalState>({ type: "closed" });
   const [taskForm, setTaskForm] = useState<TaskFormState>({ type: "closed" });
   const [taskDetail, setTaskDetail] = useState<TaskDetailState>({
+    type: "closed",
+  });
+  const [questPublish, setQuestPublish] = useState<QuestPublishState>({
     type: "closed",
   });
   const [guildRequestForm, setGuildRequestForm] =
@@ -538,7 +559,12 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
     [staff, selectedPlayer],
   );
 
-  const isGuildOfficer = canIssueDirective(selectedMember?.roleLevel);
+  const ownMember = useMemo(
+    () => staff.find((member) => member.name === ownPlayerName) ?? null,
+    [ownPlayerName, staff],
+  );
+
+  const isGuildOfficer = canIssueDirective(ownMember?.roleLevel);
 
   const staffByName = useMemo(() => {
     return new Map(staff.map((member) => [member.name, member]));
@@ -561,14 +587,10 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
   }, [staff]);
 
   useEffect(() => {
-    if (selectedPlayer) saveSelectedPlayer(selectedPlayer);
-  }, [selectedPlayer]);
-
-  useEffect(() => {
-    if (selectedMember?.avatarType) {
-      saveSelectedAvatar(selectedMember.avatarType);
+    if (ownMember?.avatarType) {
+      saveSelectedAvatar(ownMember.avatarType);
     }
-  }, [selectedMember]);
+  }, [ownMember]);
 
   useEffect(() => {
     const markOnline = () => setIsOnline(true);
@@ -593,7 +615,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
       .catch(() => {
         enqueueMessage({
           speaker: "システム",
-          message: "気付きの書の更新に失敗しました。",
+          message: "ギルド速報の更新に失敗しました。",
           icon: "⚙️",
           tone: "system",
           durationMs: 2200,
@@ -681,15 +703,17 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
     const filtered =
       quickFilter === "open"
         ? baseActive.filter((q) => q.status === "open")
-        : quickFilter === "urgent"
-          ? baseActive.filter((q) => q.urgency >= 4)
-          : quickFilter === "succession"
-            ? baseActive.filter((q) => q.status === "succession_needed")
-            : quickFilter === "mine"
-              ? baseActive.filter((q) => isPlayerOnQuest(q, selectedPlayer))
-              : quickFilter === "completed"
-                ? []
-                : baseActive;
+        : quickFilter === "recruiting"
+          ? baseActive.filter((q) => q.status === "recruiting")
+          : quickFilter === "help_wanted"
+            ? baseActive.filter((q) => q.status === "help_wanted")
+            : quickFilter === "in_progress"
+              ? baseActive.filter((q) => q.status === "in_progress")
+              : quickFilter === "mine"
+                ? baseActive.filter((q) => isPlayerOnQuest(q, selectedPlayer))
+                : quickFilter === "completed"
+                  ? []
+                  : baseActive;
     return sortQuests(filtered);
   }, [baseActive, quickFilter, selectedPlayer]);
 
@@ -705,7 +729,10 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
 
   const recommendedQuest = useMemo(() => {
     const candidates = activeQuests.filter(
-      (q) => q.status === "open" || q.status === "succession_needed",
+      (q) =>
+        q.status === "open" ||
+        q.status === "recruiting" ||
+        q.status === "help_wanted",
     );
     return sortQuests(candidates)[0] ?? null;
   }, [activeQuests]);
@@ -728,15 +755,20 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
   }, [completedHistory]);
 
   const openCount = activeQuests.filter((q) => q.status === "open").length;
-  const urgentCount = activeQuests.filter((q) => q.urgency >= 4).length;
-  const successionCount = activeQuests.filter(
-    (q) => q.status === "succession_needed",
+  const recruitingCount = activeQuests.filter(
+    (q) => q.status === "recruiting",
+  ).length;
+  const helpWantedCount = activeQuests.filter(
+    (q) => q.status === "help_wanted",
+  ).length;
+  const inProgressCount = activeQuests.filter(
+    (q) => q.status === "in_progress",
   ).length;
   const filterCounts: Record<QuickFilter, number> = {
     open: baseActive.filter((q) => q.status === "open").length,
-    urgent: baseActive.filter((q) => q.urgency >= 4).length,
-    succession: baseActive.filter((q) => q.status === "succession_needed")
-      .length,
+    recruiting: baseActive.filter((q) => q.status === "recruiting").length,
+    help_wanted: baseActive.filter((q) => q.status === "help_wanted").length,
+    in_progress: baseActive.filter((q) => q.status === "in_progress").length,
     mine: activeQuests.filter((q) => isPlayerOnQuest(q, selectedPlayer)).length,
     completed: sortedCompleted.length,
   };
@@ -768,20 +800,31 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
       : null;
 
   const visibleTasks = useMemo(() => {
-    return adventurerTasks.filter(
-      (task) => task.ownerName === selectedPlayer || task.isPublic,
-    );
-  }, [adventurerTasks, selectedPlayer]);
+    const viewingOwnNotebook = selectedPlayer === ownPlayerName;
+    return adventurerTasks.filter((task) => {
+      if (task.ownerName !== selectedPlayer) return false;
+      return viewingOwnNotebook || task.isPublic;
+    });
+  }, [adventurerTasks, ownPlayerName, selectedPlayer]);
 
   const selectedPlayerTasks = useMemo(() => {
-    return adventurerTasks.filter((task) => task.ownerName === selectedPlayer);
-  }, [adventurerTasks, selectedPlayer]);
+    return visibleTasks;
+  }, [visibleTasks]);
+
+  const canManageSelectedTasks = selectedPlayer === ownPlayerName;
+
+  const ownPlayerTasks = useMemo(() => {
+    return adventurerTasks.filter((task) => task.ownerName === ownPlayerName);
+  }, [adventurerTasks, ownPlayerName]);
 
   const editingTask =
     taskForm.type === "edit" ? findTask(taskForm.taskId) ?? null : null;
 
   const detailTask =
     taskDetail.type === "open" ? findTask(taskDetail.taskId) ?? null : null;
+
+  const publishingTask =
+    questPublish.type === "open" ? findTask(questPublish.taskId) ?? null : null;
 
   const guildRequestSourceTask =
     guildRequestForm.type === "open" && guildRequestForm.taskId != null
@@ -807,19 +850,19 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
     );
     const receivedRequests = guildRequests.filter(
       (request) =>
-        request.toPlayer === selectedPlayer &&
+        request.toPlayer === ownPlayerName &&
         request.status === "pending" &&
         request.requestType === "assignment",
     );
     const receivedSuggestions = guildRequests.filter(
       (request) =>
-        request.toPlayer === selectedPlayer &&
+        request.toPlayer === ownPlayerName &&
         request.status === "pending" &&
         request.requestType === "suggestion",
     );
     const receivedDirectives = guildRequests.filter(
       (request) =>
-        request.toPlayer === selectedPlayer &&
+        request.toPlayer === ownPlayerName &&
         request.requestType === "directive" &&
         request.status !== "rejected",
     );
@@ -834,29 +877,29 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
       expeditionReturns: readyExpeditions.length,
       unclaimedRewards: unclaimedRewards.length,
     };
-  }, [expeditions, guildRequests, now, selectedPlayer, selectedPlayerTasks]);
+  }, [expeditions, guildRequests, now, ownPlayerName, selectedPlayerTasks]);
 
   const relevantNotices = useMemo(() => {
     return guildNotices.filter(
       (notice) =>
         !notice.dismissed &&
         (!notice.targetPlayer ||
-          notice.targetPlayer === selectedPlayer ||
+          notice.targetPlayer === ownPlayerName ||
           isGuildOfficer),
     );
-  }, [guildNotices, isGuildOfficer, selectedPlayer]);
+  }, [guildNotices, isGuildOfficer, ownPlayerName]);
 
   const receivedGuildRequests = useMemo(() => {
     return guildRequests.filter(
       (request) =>
-        request.toPlayer === selectedPlayer &&
+        request.toPlayer === ownPlayerName &&
         (request.status === "pending" ||
           (request.requestType === "directive" && request.status !== "rejected")),
     );
-  }, [guildRequests, selectedPlayer]);
+  }, [guildRequests, ownPlayerName]);
 
   const urgentReport = useMemo(() => {
-    const activeTasks = selectedPlayerTasks.filter(
+    const activeTasks = ownPlayerTasks.filter(
       (task) => task.status !== "completed",
     );
     const overdue = activeTasks.filter(
@@ -871,12 +914,12 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
       dueSoon,
       shouldShow: !urgentReportSeen && (overdue.length > 0 || dueSoon.length > 0),
     };
-  }, [selectedPlayerTasks, urgentReportSeen]);
+  }, [ownPlayerTasks, urgentReportSeen]);
 
   useEffect(() => {
     for (const request of guildRequests) {
       if (
-        request.toPlayer !== selectedPlayer ||
+        request.toPlayer !== ownPlayerName ||
         (request.requestType === "directive"
           ? request.status === "rejected"
           : request.status !== "pending") ||
@@ -897,7 +940,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
         },
       );
     }
-  }, [guildRequests, selectedPlayer]);
+  }, [guildRequests, ownPlayerName]);
 
   const runAction = async <T,>(
     key: string,
@@ -936,7 +979,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
       null,
       (updated) => {
         enqueueGuildMessage(
-          `${selectedPlayer} が『${updated.title}』に挑戦しました！`,
+          `${selectedPlayer} が『${updated.title}』に参加しました！`,
           { icon: selectedMember?.avatar ?? "🧙" },
         );
       },
@@ -952,7 +995,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
       null,
       (updated) => {
         enqueueGuildMessage(
-          `${selectedPlayer} が『${updated.title}』を継承しました！`,
+          `${selectedPlayer} が『${updated.title}』に参加しました！`,
           { icon: selectedMember?.avatar ?? "🧙" },
         );
       },
@@ -1180,8 +1223,8 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
             : "新しい任務を冒険者手帳に記しました。",
           { durationMs: 2200 },
         );
-        if (saved.calendarEventId != null) {
-          enqueueGuildMessage("任務の納期をギルド暦に記しました。", {
+        if (saved.dueDate) {
+          enqueueGuildMessage("任務をギルド暦の任務欄に反映しました。", {
             durationMs: 2200,
           });
         }
@@ -1194,16 +1237,24 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
   const handleDelegateTask = (taskId: number) => {
     const task = findTask(taskId);
     if (!task || !selectedPlayer) return;
+    setQuestPublish({ type: "open", taskId });
+  };
 
+  const handlePublishQuest = (data: QuestPublishFormData) => {
+    if (questPublish.type !== "open" || !selectedPlayer) return;
+    const task = findTask(questPublish.taskId);
+    if (!task) return;
     void runAction(
-      `task-delegate-${taskId}`,
-      () => delegateTaskToQuest(task, selectedPlayer),
+      `task-delegate-${questPublish.taskId}`,
+      () => delegateTaskToQuest(task, selectedPlayer, data),
       null,
       ({ quest }) => {
+        setQuestPublish({ type: "closed" });
         enqueueGuildMessage(`『${quest.title}』をギルドへ依頼しました！`, {
           durationMs: 2400,
         });
         void reloadTasks();
+        void reloadCalendar();
         void reload();
       },
     );
@@ -1414,6 +1465,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
       );
       saveSelectedPlayer(member.name);
       saveSelectedAvatar(member.avatarType);
+      setOwnPlayerName(member.name);
       setSelectedPlayer(member.name);
       await reloadStaff();
       addToast("操作中の冒険者を変更しました。");
@@ -1539,9 +1591,6 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
             quickFilter={quickFilter}
             onQuickFilter={(filter) => {
               setQuickFilter(filter);
-              if (filter === "succession") {
-                setNav("board");
-              }
               setMobilePanel("quests");
             }}
             myQuestCount={myQuestCount}
@@ -1563,20 +1612,22 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                       GUILD BOARD
                     </p>
                     <h2 className="pixel-window-title text-sm sm:text-xl font-bold">
-                      {quickFilter === "succession"
+                      {quickFilter === "help_wanted"
                         ? "助っ人募集"
                         : quickFilter === "completed"
                           ? "完了ログ"
                           : quickFilter === "open"
-                            ? "未受注クエスト"
-                            : quickFilter === "urgent"
-                              ? "緊急クエスト"
+                            ? "未受注依頼"
+                            : quickFilter === "recruiting"
+                              ? "募集中"
+                              : quickFilter === "in_progress"
+                                ? "挑戦中"
                               : quickFilter === "mine"
-                                ? "自分のクエスト"
+                                ? "自分の依頼"
                                 : nav === "notebook"
                                   ? "本日の任務"
                                   : nav === "notices"
-                                    ? "気付きの書"
+                                    ? "ギルド速報"
                                   : nav === "board"
                         ? "ギルド依頼"
                         : nav === "my"
@@ -1585,23 +1636,19 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                             ? "ギルド暦"
                           : nav === "expedition"
                             ? "遠征"
-                          : nav === "activity"
-                            ? "冒険の記録"
-                            : nav === "settings"
+                          : nav === "settings"
                               ? "設定"
                               : "ギルドの記録"}
                     </h2>
                     <p className="text-[10px] sm:text-xs text-slate-400 mt-0.5 truncate">
-                      {nav === "activity"
-                        ? "ギルド内の行動記録 · Realtime同期"
-                        : nav === "settings"
+                      {nav === "settings"
                           ? `操作中の冒険者 ${selectedPlayer || "未選択"}`
                           : nav === "notebook"
-                            ? `冒険者手帳 · ${selectedPlayerTasks.length}件の記録`
+                            ? `${selectedPlayer === ownPlayerName ? "自分" : selectedPlayer || "冒険者"}の任務 · ${selectedPlayerTasks.length}件`
                             : nav === "notices"
-                              ? `受信 ${receivedGuildRequests.length}件 · 気付き ${relevantNotices.length}件`
+                              ? `受信 ${receivedGuildRequests.length}件 · 警報 ${relevantNotices.length}件`
                           : nav === "calendar"
-                            ? `${formatCalendarMonth(calendarMonth)} · ${calendarEvents.length}件`
+                            ? `${formatCalendarMonth(calendarMonth)} · 予定 ${calendarEvents.length}件`
                           : nav === "expedition"
                             ? `遠征チケット ${resources.expeditionTickets}枚 · GOLD ${resources.gold}`
                           : nav === "stats"
@@ -1611,19 +1658,24 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                   </div>
                   <div className="hidden sm:flex flex-wrap items-center gap-2">
                     <div className="hidden xl:flex flex-wrap gap-2 text-[10px] sm:text-xs">
-                      {urgentCount > 0 && (
-                        <span className="pixel-chip px-2 py-1 border-red-400/60 text-red-300 bg-red-500/10">
-                          緊急 {urgentCount}
-                        </span>
-                      )}
                       {openCount > 0 && (
                         <span className="pixel-chip px-2 py-1 border-[var(--color-gold)]/60 text-[var(--color-gold)] bg-[var(--color-gold)]/10">
                           未受注 {openCount}
                         </span>
                       )}
-                      {successionCount > 0 && (
+                      {recruitingCount > 0 && (
+                        <span className="pixel-chip px-2 py-1 border-[var(--color-mana)]/60 text-[var(--color-mana)] bg-[var(--color-mana)]/10">
+                          募集中 {recruitingCount}
+                        </span>
+                      )}
+                      {helpWantedCount > 0 && (
                         <span className="pixel-chip px-2 py-1 border-[var(--color-rare)]/60 text-[var(--color-rare)] bg-[var(--color-rare)]/10">
-                          助っ人募集 {successionCount}
+                          助っ人募集 {helpWantedCount}
+                        </span>
+                      )}
+                      {inProgressCount > 0 && (
+                        <span className="pixel-chip px-2 py-1 border-amber-300/60 text-amber-200 bg-amber-400/10">
+                          挑戦中 {inProgressCount}
                         </span>
                       )}
                     </div>
@@ -1645,7 +1697,9 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
             ) : nav === "notebook" ? (
               <TaskNotebookPanel
                 tasks={visibleTasks}
-                selectedPlayer={selectedPlayer}
+                selectedPlayer={ownPlayerName || selectedPlayer}
+                ownPlayerName={ownPlayerName}
+                canManageTasks={canManageSelectedTasks}
                 dashboard={taskDashboard}
                 calendarEventById={calendarEventById}
                 questById={new Map(quests.map((quest) => [quest.id, quest]))}
@@ -1671,6 +1725,8 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
               <GuildNoticesPanel
                 notices={relevantNotices}
                 requests={receivedGuildRequests}
+                events={calendarEvents}
+                expeditions={expeditions}
                 selectedPlayer={selectedPlayer}
                 loading={guildOperationsLoading}
                 busy={busy}
@@ -1682,6 +1738,9 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
               <CalendarPanel
                 events={calendarEvents}
                 quests={quests}
+                tasks={adventurerTasks}
+                selectedPlayer={selectedPlayer}
+                ownPlayerName={ownPlayerName}
                 staff={staff}
                 loading={calendarLoading}
                 monthDate={calendarMonth}
@@ -1706,8 +1765,6 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                 onStart={handleStartExpedition}
                 onClaim={handleClaimExpedition}
               />
-            ) : nav === "activity" ? (
-              <ActivityLogScreen logs={logs} loading={logsLoading} />
             ) : nav === "settings" ? (
               <SettingsScreen
                 currentName={selectedPlayer}
@@ -1874,12 +1931,22 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
               loading={staffLoading}
               selectedPlayer={selectedPlayer}
               onSelectPlayer={setSelectedPlayer}
-              className="w-full flex-1 min-h-0"
+              className="w-full flex-[3] min-h-0"
             />
-            <AdventureLogPanel
-              logs={logs}
-              loading={logsLoading}
-              className="hidden lg:block"
+            <LatestBulletinPanel
+              notices={relevantNotices}
+              requests={receivedGuildRequests}
+              events={calendarEvents}
+              expeditions={expeditions}
+              tasks={ownPlayerTasks}
+              selectedPlayer={ownPlayerName || selectedPlayer}
+              onOpenNotices={() => {
+                setNav("notices");
+                setMobilePanel("quests");
+              }}
+              onDismissNotice={handleDismissNotice}
+              busy={busy}
+              className="hidden lg:flex flex-[1] min-h-0"
             />
           </aside>
         </div>
@@ -1978,6 +2045,14 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
           setTaskDetail({ type: "closed" });
           setCalendarDetail({ type: "open", eventId });
         }}
+      />
+
+      <QuestPublishModal
+        open={questPublish.type === "open"}
+        task={publishingTask}
+        submitting={busy}
+        onClose={() => setQuestPublish({ type: "closed" })}
+        onSubmit={handlePublishQuest}
       />
 
       <GuildRequestFormModal
@@ -2280,53 +2355,220 @@ function HudMeter({
   );
 }
 
-function AdventureLogPanel({
-  logs,
-  loading,
+type LatestBulletin = {
+  id: string;
+  tone: "alert" | "news" | "schedule" | "expedition";
+  label: string;
+  title: string;
+  message: string;
+  noticeId?: number;
+};
+
+function LatestBulletinPanel({
+  notices,
+  requests,
+  events,
+  expeditions,
+  tasks,
+  selectedPlayer,
+  onOpenNotices,
+  onDismissNotice,
+  busy,
   className = "",
 }: {
-  logs: QuestLog[];
-  loading: boolean;
+  notices: GuildNotice[];
+  requests: GuildRequest[];
+  events: CalendarEvent[];
+  expeditions: Expedition[];
+  tasks: AdventurerTask[];
+  selectedPlayer: string;
+  onOpenNotices: () => void;
+  onDismissNotice: (noticeId: number) => void;
+  busy: boolean;
   className?: string;
 }) {
+  const items = buildLatestBulletins({
+    notices,
+    requests,
+    events,
+    expeditions,
+    tasks,
+    selectedPlayer,
+  }).slice(0, 3);
+
   return (
-    <section className={`rpg-frame p-4 ${className}`}>
-      <header className="mb-3 flex items-center justify-between border-b-2 border-[var(--color-gold)]/25 pb-3">
-        <h2 className="pixel-window-title text-sm font-bold">冒険の記録</h2>
+    <section className={`rpg-frame latest-bulletin-panel p-3 flex-col ${className}`}>
+      <header className="mb-2 flex items-center justify-between border-b-2 border-[var(--color-gold)]/25 pb-2">
+        <h2 className="pixel-window-title text-sm font-bold">最新速報</h2>
         <span className="pixel-chip px-2 py-1 text-[10px] text-slate-400">
-          最新
+          ALERT
         </span>
       </header>
-      <ActivityLog logs={logs.slice(0, 5)} loading={loading} />
+      {items.length === 0 ? (
+        <div className="flex min-h-0 flex-1 items-center justify-center text-center">
+          <p className="text-xs leading-5 text-slate-500">
+            重要なお知らせはありません。
+          </p>
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto custom-scroll space-y-2 pr-1">
+          {items.map((item) => (
+            <article
+              key={item.id}
+              className={`latest-bulletin-card latest-bulletin-${item.tone} p-2.5`}
+            >
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <span className="calendar-tag">{item.label}</span>
+              </div>
+              <h3 className="pixel-title line-clamp-2 text-xs text-slate-100">
+                {item.title}
+              </h3>
+              <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-slate-500">
+                {item.message}
+              </p>
+              <div className="mt-2 grid grid-cols-2 gap-1">
+                <button
+                  type="button"
+                  onClick={onOpenNotices}
+                  className="quest-btn-ghost min-h-9 px-2 text-[10px]"
+                >
+                  詳細
+                </button>
+                {item.noticeId ? (
+                  <button
+                    type="button"
+                    onClick={() => onDismissNotice(item.noticeId!)}
+                    disabled={busy}
+                    className="quest-btn-ghost min-h-9 px-2 text-[10px] disabled:opacity-45"
+                  >
+                    確認済み
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={onOpenNotices}
+                    className="quest-btn-primary min-h-9 px-2 text-[10px]"
+                  >
+                    速報を見る
+                  </button>
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={onOpenNotices}
+        className="quest-btn-ghost mt-2 min-h-10 w-full px-2 text-[10px]"
+      >
+        ギルド速報を見る
+      </button>
     </section>
   );
 }
 
-function ActivityLogScreen({
-  logs,
-  loading,
+function buildLatestBulletins({
+  notices,
+  requests,
+  events,
+  expeditions,
+  tasks,
+  selectedPlayer,
 }: {
-  logs: QuestLog[];
-  loading: boolean;
-}) {
-  return (
-    <section className="rpg-frame min-h-0 flex-1 overflow-hidden p-3 sm:p-4 flex flex-col">
-      <header className="mb-3 shrink-0 border-b-2 border-[var(--color-gold)]/25 pb-3">
-        <p className="font-[family-name:var(--font-display)] text-[10px] tracking-[0.24em] text-[var(--color-gold)]/80">
-          EVENT LOG
-        </p>
-        <h3 className="pixel-window-title mt-1 text-base font-semibold">
-          冒険の記録
-        </h3>
-        <p className="mt-1 text-xs text-slate-500">
-          受注、継承、達成などギルドで起きた出来事を確認できます。
-        </p>
-      </header>
-      <div className="min-h-0 flex-1 overflow-y-auto custom-scroll pr-1">
-        <ActivityLog logs={logs} loading={loading} />
-      </div>
-    </section>
-  );
+  notices: GuildNotice[];
+  requests: GuildRequest[];
+  events: CalendarEvent[];
+  expeditions: Expedition[];
+  tasks: AdventurerTask[];
+  selectedPlayer: string;
+}): LatestBulletin[] {
+  const today = toDateInputValue(new Date());
+  const weekRange = getWeekRange(new Date());
+  const taskAlerts = tasks
+    .filter((task) => task.status !== "completed")
+    .map((task): LatestBulletin | null => {
+      const level = getDeadlineWarningLevel(task);
+      if (!level) return null;
+      return {
+        id: `task-${task.id}`,
+        tone: "alert",
+        label: level === "overdue" ? "ギルド警報" : "納期警告",
+        title: `「${task.title}」の納期${level === "overdue" ? "を過ぎています" : "が近づいています"}`,
+        message:
+          level === "overdue"
+            ? `${task.ownerName}の任務が未完了です。`
+            : `${task.ownerName}の任務です。早めに確認してください。`,
+      };
+    })
+    .filter((item): item is LatestBulletin => item != null);
+
+  const noticeItems = notices.map((notice): LatestBulletin => ({
+    id: `notice-${notice.id}`,
+    tone:
+      notice.type === "deadline_warning" || notice.type === "overdue"
+        ? "alert"
+        : "news",
+    label:
+      notice.type === "deadline_warning" || notice.type === "overdue"
+        ? "ギルド警報"
+        : "ギルド速報",
+    title: notice.title,
+    message: notice.message,
+    noticeId: notice.id,
+  }));
+
+  const requestItems = requests.map((request): LatestBulletin => ({
+    id: `request-${request.id}`,
+    tone: request.requestType === "directive" ? "alert" : "news",
+    label:
+      request.requestType === "directive"
+        ? "ギルド警報"
+        : request.requestType === "suggestion"
+          ? "助言"
+          : "指名依頼",
+    title: request.taskTitle,
+    message: `${request.fromPlayer || "ギルド"}から${REQUEST_TYPE_LABELS[request.requestType]}が届いています。`,
+  }));
+
+  const eventItems = events
+    .filter(
+      (event) =>
+        event.importance >= 4 &&
+        event.eventDate >= today &&
+        isDateWithinRange(event.eventDate, weekRange.start, weekRange.end),
+    )
+    .sort(compareCalendarEvents)
+    .slice(0, 3)
+    .map((event): LatestBulletin => ({
+      id: `event-${event.id}`,
+      tone: "schedule",
+      label: "ギルド予定",
+      title: event.title,
+      message: `${formatCalendarDate(event.eventDate)} ${formatEventTime(event)}`,
+    }));
+
+  const expeditionItems = expeditions
+    .filter(
+      (expedition) =>
+        expedition.status === "completed" &&
+        isExpeditionReady(expedition, Date.now()),
+    )
+    .map((expedition): LatestBulletin => ({
+      id: `expedition-${expedition.id}`,
+      tone: "expedition",
+      label: "遠征帰還",
+      title: expedition.expeditionName,
+      message: `${selectedPlayer}が遠征から帰還しました。報酬を受け取れます。`,
+    }));
+
+  return [
+    ...taskAlerts,
+    ...noticeItems,
+    ...requestItems,
+    ...eventItems,
+    ...expeditionItems,
+  ];
 }
 
 function SettingsScreen({
@@ -2478,9 +2720,11 @@ function QuestDetailModal({
   const statusLabel =
     quest.status === "open"
       ? "未受注"
+      : quest.status === "recruiting"
+        ? "募集中"
       : quest.status === "in_progress"
         ? "挑戦中"
-        : quest.status === "succession_needed"
+        : quest.status === "help_wanted"
           ? "助っ人募集"
           : "達成済み";
 
@@ -2511,7 +2755,7 @@ function QuestDetailModal({
                 {quest.title}
               </h2>
               <p className="mt-1 text-xs text-slate-400">
-                依頼主: {quest.requester} / 推定時間: {quest.estimatedTime}
+                依頼者: {quest.requester} / 推定時間: {quest.estimatedTime} / 納期: {formatDueAt(quest.dueAt)}
               </p>
             </div>
             <div className="pixel-chip px-3 py-2 text-center text-[var(--color-gold-bright)]">
@@ -2526,25 +2770,24 @@ function QuestDetailModal({
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <DetailCell label="状態" value={statusLabel} />
-          <DetailCell label="Lv" value={quest.level} />
+          <DetailCell label="Lv" value={QUEST_DIFFICULTY_LABELS[quest.difficulty]} />
+          <DetailCell label="必要人員" value={`${quest.requiredMembers}人`} />
+          <DetailCell label="参加人数" value={`${quest.participants.length}/${quest.requiredMembers}`} />
+          <DetailCell label="納期" value={formatDueAt(quest.dueAt)} />
           <DetailCell label="緊急度" value={`◆`.repeat(quest.urgency)} />
           <DetailCell label="重要度" value={`◆`.repeat(quest.importance)} />
-          <DetailCell
-            label="挑戦者"
-            value={quest.challenger}
-            member={staffByName.get(quest.challenger)}
-          />
-          <DetailCell
-            label="継承者1"
-            value={quest.successor1}
-            member={staffByName.get(quest.successor1)}
-          />
-          <DetailCell
-            label="継承者2"
-            value={quest.successor2}
-            member={staffByName.get(quest.successor2)}
-          />
-          <DetailCell label="装飾ランク" value={`${quest.priority} Rank`} />
+          {quest.participants.length === 0 ? (
+            <DetailCell label="参加メンバー" value="—" />
+          ) : (
+            quest.participants.map((participant, index) => (
+              <DetailCell
+                key={participant}
+                label={`参加メンバー${index + 1}`}
+                value={participant}
+                member={staffByName.get(participant)}
+              />
+            ))
+          )}
         </div>
 
         <section className="mt-4 border-2 border-white/15 bg-black/20 p-3 shadow-[3px_3px_0_#000]">
@@ -2646,9 +2889,25 @@ function DetailCell({
   );
 }
 
+function formatDueAt(value: string | null | undefined) {
+  if (!value) return "未設定";
+  try {
+    return new Intl.DateTimeFormat("ja-JP", {
+      month: "numeric",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(value));
+  } catch {
+    return value;
+  }
+}
+
 function TaskNotebookPanel({
   tasks,
   selectedPlayer,
+  ownPlayerName,
+  canManageTasks,
   dashboard,
   calendarEventById,
   questById,
@@ -2666,6 +2925,8 @@ function TaskNotebookPanel({
 }: {
   tasks: AdventurerTask[];
   selectedPlayer: string;
+  ownPlayerName: string;
+  canManageTasks: boolean;
   dashboard: {
     today: number;
     dueSoon: number;
@@ -2728,20 +2989,26 @@ function TaskNotebookPanel({
               ADVENTURER NOTEBOOK
             </p>
             <h3 className="pixel-window-title mt-1 text-base sm:text-lg font-semibold">
-              本日の任務
+              {canManageTasks
+                ? "自分の本日の任務"
+                : `${selectedPlayer || "冒険者"}の公開任務`}
             </h3>
             <p className="mt-1 text-xs text-slate-500 truncate">
-              {selectedPlayer || "冒険者"} の手帳から、必要な任務だけをギルド依頼にします。
+              {canManageTasks
+                ? `${ownPlayerName || "自分"} の手帳から、必要な任務だけをギルド依頼にします。`
+                : "公開されている任務だけを表示しています。非公開任務は本人以外には見えません。"}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onCreate}
-            disabled={busy}
-            className="quest-btn-primary min-h-11 px-3 text-xs disabled:opacity-45"
-          >
-            任務を記す
-          </button>
+          {canManageTasks && (
+            <button
+              type="button"
+              onClick={onCreate}
+              disabled={busy}
+              className="quest-btn-primary min-h-11 px-3 text-xs disabled:opacity-45"
+            >
+              任務を記す
+            </button>
+          )}
         </div>
 
         <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-1.5">
@@ -2798,19 +3065,25 @@ function TaskNotebookPanel({
           <div className="rpg-frame p-5 text-center">
             <p className="text-3xl">📔</p>
             <h4 className="pixel-window-title mt-3 text-base font-semibold">
-              手帳は静かです
+              {canManageTasks
+                ? "本日の任務はありません"
+                : "公開されている任務はありません"}
             </h4>
             <p className="mt-2 text-sm text-slate-500">
-              この期間の任務はありません。必要な作業を任務として記録できます。
+              {canManageTasks
+                ? "この期間の任務はありません。必要な作業を任務として記録できます。"
+                : "この冒険者の非公開任務は表示されません。"}
             </p>
-            <button
-              type="button"
-              onClick={onCreate}
-              disabled={busy}
-              className="quest-btn-primary mt-4 min-h-11 px-4 text-sm disabled:opacity-45"
-            >
-              任務を記す
-            </button>
+            {canManageTasks && (
+              <button
+                type="button"
+                onClick={onCreate}
+                disabled={busy}
+                className="quest-btn-primary mt-4 min-h-11 px-4 text-sm disabled:opacity-45"
+              >
+                任務を記す
+              </button>
+            )}
           </div>
         ) : (
           <div className="grid gap-2">
@@ -2825,6 +3098,7 @@ function TaskNotebookPanel({
                 }
                 relatedQuest={task.questId ? questById.get(task.questId) ?? null : null}
                 busy={busy}
+                canManage={canManageTasks}
                 onEdit={onEdit}
                 onOpenDetail={onOpenDetail}
                 onDelegate={onDelegate}
@@ -2847,6 +3121,7 @@ function TaskCard({
   relatedEvent,
   relatedQuest,
   busy,
+  canManage,
   onEdit,
   onOpenDetail,
   onDelegate,
@@ -2860,6 +3135,7 @@ function TaskCard({
   relatedEvent: CalendarEvent | null;
   relatedQuest: Quest | null;
   busy: boolean;
+  canManage: boolean;
   onEdit: (taskId: number) => void;
   onOpenDetail: (taskId: number) => void;
   onDelegate: (taskId: number) => void;
@@ -2927,7 +3203,7 @@ function TaskCard({
             >
               達成済み
             </button>
-          ) : (
+          ) : canManage ? (
             <button
               type="button"
               onClick={() => onComplete(task.id)}
@@ -2935,16 +3211,6 @@ function TaskCard({
               className="quest-btn-primary min-h-11 text-xs disabled:opacity-45"
             >
               任務完了
-            </button>
-          )}
-          {task.status !== "completed" && task.status !== "delegated" ? (
-            <button
-              type="button"
-              onClick={() => onDelegate(task.id)}
-              disabled={busy}
-              className="quest-btn-ghost min-h-11 text-xs disabled:opacity-45"
-            >
-              ギルドへ依頼
             </button>
           ) : (
             <button
@@ -2956,7 +3222,26 @@ function TaskCard({
               詳細
             </button>
           )}
-          {task.status !== "completed" && (
+          {canManage && task.status !== "completed" && task.status !== "delegated" ? (
+            <button
+              type="button"
+              onClick={() => onDelegate(task.id)}
+              disabled={busy}
+              className="quest-btn-ghost min-h-11 text-xs disabled:opacity-45"
+            >
+              任務を依頼書化
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onOpenDetail(task.id)}
+              disabled={busy}
+              className="quest-btn-ghost min-h-11 text-xs disabled:opacity-45"
+            >
+              詳細
+            </button>
+          )}
+          {canManage && task.status !== "completed" && (
             <button
               type="button"
               onClick={() => onOpenRequestForm("suggestion", task.id)}
@@ -2966,7 +3251,7 @@ function TaskCard({
               助言する
             </button>
           )}
-          {task.status !== "completed" && (
+          {canManage && task.status !== "completed" && (
             <button
               type="button"
               onClick={() => onOpenRequestForm("assignment", task.id)}
@@ -2976,7 +3261,7 @@ function TaskCard({
               指名依頼
             </button>
           )}
-          {canUseDirective && task.status !== "completed" && (
+          {canManage && canUseDirective && task.status !== "completed" && (
             <button
               type="button"
               onClick={() => onOpenRequestForm("directive", task.id)}
@@ -2986,7 +3271,7 @@ function TaskCard({
               ギルド指令
             </button>
           )}
-          {task.status !== "completed" && task.status !== "delegated" && (
+          {canManage && task.status !== "completed" && task.status !== "delegated" && (
             <button
               type="button"
               onClick={() => onOpenDetail(task.id)}
@@ -2996,7 +3281,7 @@ function TaskCard({
               詳細
             </button>
           )}
-          {task.status !== "completed" && task.status !== "delegated" && (
+          {canManage && task.status !== "completed" && task.status !== "delegated" && (
             <button
               type="button"
               onClick={() => onEdit(task.id)}
@@ -3383,7 +3668,7 @@ function TaskDetailModal({
                 disabled={disabled}
                 className="quest-btn-ghost disabled:opacity-45"
               >
-                ギルドへ依頼
+                任務を依頼書化
               </button>
             </>
           )}
@@ -3407,6 +3692,271 @@ function TaskDetailModal({
       </section>
     </div>
   );
+}
+
+function QuestPublishModal({
+  open,
+  task,
+  submitting,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  task: AdventurerTask | null;
+  submitting: boolean;
+  onClose: () => void;
+  onSubmit: (data: QuestPublishFormData) => void;
+}) {
+  const [form, setForm] = useState<QuestPublishFormData>(() =>
+    task ? questPublishDefaults(task) : questPublishFallback(),
+  );
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open || !task) return;
+    setForm(questPublishDefaults(task));
+    setError(null);
+  }, [open, task]);
+
+  if (!open || !task) return null;
+
+  const update = <K extends keyof QuestPublishFormData>(
+    key: K,
+    value: QuestPublishFormData[K],
+  ) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+    if (error) setError(null);
+  };
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (submitting) return;
+    if (!form.title.trim()) {
+      setError("依頼タイトルを入力してください");
+      return;
+    }
+    if (!form.dueDate || !form.dueTime) {
+      setError("納期の日付と時間を入力してください");
+      return;
+    }
+    onSubmit({
+      ...form,
+      title: form.title.trim(),
+      description: form.description.trim(),
+      requiredMembers: Math.min(3, Math.max(1, form.requiredMembers)),
+    });
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[69] flex items-end justify-center p-0 sm:items-center sm:p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="quest-publish-title"
+    >
+      <button
+        type="button"
+        className="modal-backdrop absolute inset-0 bg-black/80"
+        aria-label="依頼書設定を閉じる"
+        onClick={submitting ? undefined : onClose}
+      />
+      <section className="modal-panel relative rpg-frame max-h-[92dvh] w-full max-w-2xl overflow-y-auto custom-scroll p-5">
+        <header className="border-b-2 border-[var(--color-gold)]/30 pb-3">
+          <p className="font-[family-name:var(--font-display)] text-[10px] tracking-[0.22em] text-[var(--color-gold)]/80">
+            REQUEST SHEET
+          </p>
+          <h2 id="quest-publish-title" className="pixel-window-title mt-1 text-xl font-bold">
+            依頼書設定
+          </h2>
+          <p className="mt-1 text-xs text-slate-500">
+            冒険者手帳の任務をギルド依頼として掲示します。
+          </p>
+        </header>
+
+        <form onSubmit={handleSubmit} className="mt-4 grid gap-3">
+          <label>
+            <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">
+              依頼タイトル *
+            </span>
+            <input
+              value={form.title}
+              onChange={(event) => update("title", event.target.value)}
+              disabled={submitting}
+              className="quest-input mt-1.5"
+              placeholder="例: 開店前の景品棚フェイスアップ"
+            />
+          </label>
+
+          <label>
+            <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">
+              詳細説明
+            </span>
+            <textarea
+              value={form.description}
+              onChange={(event) => update("description", event.target.value)}
+              disabled={submitting}
+              rows={4}
+              className="quest-input mt-1.5 resize-none"
+              placeholder="依頼を受ける人に伝える手順や注意点..."
+            />
+          </label>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <label>
+              <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">
+                難易度
+              </span>
+              <select
+                value={form.difficulty}
+                onChange={(event) =>
+                  update("difficulty", Number(event.target.value) as QuestDifficulty)
+                }
+                disabled={submitting}
+                className="quest-input mt-1.5"
+              >
+                {([1, 2, 3, 4, 5] as QuestDifficulty[]).map((difficulty) => (
+                  <option key={difficulty} value={difficulty}>
+                    Lv {QUEST_DIFFICULTY_LABELS[difficulty]}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label>
+              <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">
+                推定時間
+              </span>
+              <select
+                value={form.estimatedMinutes}
+                onChange={(event) =>
+                  update("estimatedMinutes", Number(event.target.value))
+                }
+                disabled={submitting}
+                className="quest-input mt-1.5"
+              >
+                {ESTIMATED_MINUTE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label>
+              <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">
+                必要人員
+              </span>
+              <select
+                value={form.requiredMembers}
+                onChange={(event) =>
+                  update("requiredMembers", Number(event.target.value))
+                }
+                disabled={submitting}
+                className="quest-input mt-1.5"
+              >
+                {[1, 2, 3].map((count) => (
+                  <option key={count} value={count}>
+                    {count}人
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label>
+              <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">
+                納期日 *
+              </span>
+              <input
+                type="date"
+                value={form.dueDate}
+                onChange={(event) => update("dueDate", event.target.value)}
+                disabled={submitting}
+                className="quest-input mt-1.5"
+              />
+            </label>
+            <label>
+              <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">
+                納期時間 *
+              </span>
+              <input
+                type="time"
+                value={form.dueTime}
+                onChange={(event) => update("dueTime", event.target.value)}
+                disabled={submitting}
+                className="quest-input mt-1.5"
+              />
+            </label>
+          </div>
+
+          <div className="border-2 border-[var(--color-gold)]/45 bg-black/30 px-3 py-2 text-xs text-slate-400 shadow-[3px_3px_0_#000]">
+            元任務: <span className="text-slate-200">{task.title}</span>
+            <span className="ml-2 text-slate-500">
+              掲示後は手帳側が「依頼中」になります。
+            </span>
+          </div>
+
+          {error && (
+            <p className="border-2 border-red-400/55 bg-red-500/10 px-3 py-2 text-sm text-red-200 shadow-[3px_3px_0_#000]">
+              {error}
+            </p>
+          )}
+
+          <footer className="grid gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={submitting}
+              className="quest-btn-secondary disabled:opacity-45"
+            >
+              キャンセル
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="quest-btn-primary disabled:opacity-45"
+            >
+              依頼書を掲示
+            </button>
+          </footer>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function questPublishDefaults(task: AdventurerTask): QuestPublishFormData {
+  return {
+    title: task.title,
+    description: task.description,
+    difficulty: difficultyFromTask(task),
+    estimatedMinutes: 30,
+    dueDate: task.dueDate || toDateInputValue(new Date()),
+    dueTime: "18:00",
+    requiredMembers: 1,
+  };
+}
+
+function questPublishFallback(): QuestPublishFormData {
+  return {
+    title: "",
+    description: "",
+    difficulty: 3,
+    estimatedMinutes: 30,
+    dueDate: toDateInputValue(new Date()),
+    dueTime: "18:00",
+    requiredMembers: 1,
+  };
+}
+
+function difficultyFromTask(task: AdventurerTask): QuestDifficulty {
+  const score = getTaskScore(task);
+  if (score >= 20) return 5;
+  if (score >= 12) return 4;
+  if (score >= 8) return 3;
+  if (score >= 4) return 2;
+  return 1;
 }
 
 function GuildRequestFormModal({
@@ -3682,6 +4232,8 @@ function GuildRequestFormModal({
 function GuildNoticesPanel({
   notices,
   requests,
+  events,
+  expeditions,
   selectedPlayer,
   loading,
   busy,
@@ -3691,6 +4243,8 @@ function GuildNoticesPanel({
 }: {
   notices: GuildNotice[];
   requests: GuildRequest[];
+  events: CalendarEvent[];
+  expeditions: Expedition[];
   selectedPlayer: string;
   loading: boolean;
   busy: boolean;
@@ -3698,6 +4252,42 @@ function GuildNoticesPanel({
   onAcceptRequest: (request: GuildRequest) => void;
   onRejectRequest: (request: GuildRequest) => void;
 }) {
+  const [filter, setFilter] = useState<BulletinFilter>("all");
+  const today = toDateInputValue(new Date());
+  const weekRange = getWeekRange(new Date());
+  const importantEvents = events
+    .filter(
+      (event) =>
+        event.importance >= 4 &&
+        event.eventDate >= today &&
+        isDateWithinRange(event.eventDate, weekRange.start, weekRange.end),
+    )
+    .sort(compareCalendarEvents)
+    .slice(0, 8);
+  const readyExpeditions = expeditions.filter(
+    (expedition) =>
+      expedition.status === "completed" &&
+      isExpeditionReady(expedition, Date.now()),
+  );
+  const filteredRequests = requests.filter((request) => {
+    if (filter === "all") return true;
+    if (filter === "request") {
+      return request.requestType === "assignment" || request.requestType === "directive";
+    }
+    if (filter === "suggestion") return request.requestType === "suggestion";
+    return false;
+  });
+  const filteredNotices = notices.filter((notice) => {
+    if (filter === "all") return true;
+    if (filter === "alert") {
+      return notice.type === "deadline_warning" || notice.type === "overdue";
+    }
+    if (filter === "suggestion") return notice.type === "suggestion";
+    return false;
+  });
+  const showEvents = filter === "all" || filter === "schedule";
+  const showExpeditions = filter === "all" || filter === "expedition";
+
   if (loading) {
     return (
       <section className="rpg-frame min-h-0 flex-1 p-4">
@@ -3714,18 +4304,20 @@ function GuildNoticesPanel({
     <section className="notices-panel min-h-0 flex-1 overflow-hidden flex flex-col gap-2">
       <div className="rpg-frame notice-book-cover p-3 shrink-0">
         <p className="font-[family-name:var(--font-display)] text-[10px] tracking-[0.22em] text-[var(--color-gold)]/80">
-          NOTICE CODEX
+          GUILD NEWS
         </p>
         <h3 className="pixel-window-title mt-1 text-base font-semibold">
-          気付きの書
+          ギルド速報
         </h3>
         <p className="mt-1 text-xs text-slate-500">
-          {selectedPlayer} 宛ての助言・依頼・期限警告を確認します。
+          {selectedPlayer} 宛ての依頼、助言、ギルド警報、重要予定を確認します。
         </p>
       </div>
 
       <div className={`min-h-0 flex-1 overflow-y-auto custom-scroll space-y-2 pb-20 lg:pb-1 pr-1 ${busy ? "opacity-80 pointer-events-none" : ""}`}>
-        {requests.length > 0 && (
+        <BulletinFilters active={filter} onChange={setFilter} />
+
+        {filteredRequests.length > 0 && (
           <section className="rpg-frame p-3">
             <header className="mb-3 border-b border-[var(--color-gold)]/25 pb-3">
               <h4 className="pixel-window-title text-sm font-semibold">
@@ -3733,7 +4325,7 @@ function GuildNoticesPanel({
               </h4>
             </header>
             <div className="grid gap-2">
-              {requests.map((request) => (
+              {filteredRequests.map((request) => (
                 <GuildRequestCard
                   key={request.id}
                   request={request}
@@ -3746,19 +4338,52 @@ function GuildNoticesPanel({
           </section>
         )}
 
+        {showEvents && importantEvents.length > 0 && (
+          <section className="rpg-frame p-3">
+            <header className="mb-3 border-b border-[var(--color-gold)]/25 pb-3">
+              <h4 className="pixel-window-title text-sm font-semibold">
+                重要予定
+              </h4>
+            </header>
+            <div className="grid gap-2">
+              {importantEvents.map((event) => (
+                <BulletinEventCard key={event.id} event={event} />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {showExpeditions && readyExpeditions.length > 0 && (
+          <section className="rpg-frame p-3">
+            <header className="mb-3 border-b border-[var(--color-gold)]/25 pb-3">
+              <h4 className="pixel-window-title text-sm font-semibold">
+                遠征帰還
+              </h4>
+            </header>
+            <div className="grid gap-2">
+              {readyExpeditions.map((expedition) => (
+                <BulletinExpeditionCard
+                  key={expedition.id}
+                  expedition={expedition}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
         <section className="rpg-frame p-3">
           <header className="mb-3 border-b border-[var(--color-gold)]/25 pb-3">
             <h4 className="pixel-window-title text-sm font-semibold">
-              気付き
+              ギルド警報
             </h4>
           </header>
-          {notices.length === 0 ? (
+          {filteredNotices.length === 0 ? (
             <p className="py-6 text-center text-sm text-slate-500">
-              今のところ新しい気付きはありません。
+              今のところ新しい速報はありません。
             </p>
           ) : (
             <div className="grid gap-2">
-              {notices.map((notice) => (
+              {filteredNotices.map((notice) => (
                 <GuildNoticeCard
                   key={notice.id}
                   notice={notice}
@@ -3771,6 +4396,85 @@ function GuildNoticesPanel({
         </section>
       </div>
     </section>
+  );
+}
+
+type BulletinFilter =
+  | "all"
+  | "alert"
+  | "request"
+  | "suggestion"
+  | "schedule"
+  | "expedition";
+
+function BulletinFilters({
+  active,
+  onChange,
+}: {
+  active: BulletinFilter;
+  onChange: (filter: BulletinFilter) => void;
+}) {
+  const filters: Array<{ id: BulletinFilter; label: string }> = [
+    { id: "all", label: "すべて" },
+    { id: "alert", label: "警報" },
+    { id: "request", label: "依頼" },
+    { id: "suggestion", label: "助言" },
+    { id: "schedule", label: "予定" },
+    { id: "expedition", label: "遠征" },
+  ];
+
+  return (
+    <div className="quick-filter-bar -mx-3 px-3 py-1 bg-[#17101a] border-y-2 border-[#fff4c4]/35">
+      <div className="flex gap-1.5 overflow-x-auto custom-scroll" role="tablist" aria-label="ギルド速報フィルター">
+        {filters.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            aria-pressed={active === item.id}
+            onClick={() => onChange(item.id)}
+            className={`pixel-chip min-h-11 shrink-0 px-2.5 text-[11px] font-semibold transition-all ${
+              active === item.id
+                ? "bg-[var(--color-gold-bright)] text-[#17101a]"
+                : "bg-black/80 text-slate-300 hover:text-[var(--color-gold-bright)]"
+            }`}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BulletinEventCard({ event }: { event: CalendarEvent }) {
+  return (
+    <article className="notice-scroll-card notice-type-system p-3">
+      <div className="mb-1.5 flex flex-wrap gap-1.5">
+        <span className="calendar-tag is-event">ギルド予定</span>
+        <span className="calendar-tag">重要度{event.importance}</span>
+      </div>
+      <h4 className="pixel-title text-sm text-slate-100">{event.title}</h4>
+      <p className="mt-1 text-xs leading-5 text-slate-400">
+        {formatCalendarDate(event.eventDate)} {formatEventTime(event)}
+      </p>
+    </article>
+  );
+}
+
+function BulletinExpeditionCard({ expedition }: { expedition: Expedition }) {
+  return (
+    <article className="notice-scroll-card notice-type-system p-3">
+      <div className="mb-1.5 flex flex-wrap gap-1.5">
+        <span className="calendar-tag">遠征</span>
+        <span className="calendar-tag">帰還済み</span>
+      </div>
+      <h4 className="pixel-title text-sm text-slate-100">
+        {expedition.expeditionName}
+      </h4>
+      <p className="mt-1 text-xs leading-5 text-slate-400">
+        報酬を受け取れます。EXP +{expedition.rewardExp} / GOLD +{expedition.rewardGold}
+      </p>
+    </article>
   );
 }
 
@@ -3907,11 +4611,11 @@ function EmergencyReportModal({
           </div>
         </div>
         <p className="mt-4 text-sm leading-6 text-slate-400">
-          気付きの書で確認し、必要なら助言・依頼で支援してください。
+          ギルド速報で確認し、必要なら助言・依頼で支援してください。
         </p>
         <div className="mt-5 grid gap-2 sm:grid-cols-2">
           <button type="button" onClick={onOpenNotices} className="quest-btn-primary">
-            気付きの書へ
+            ギルド速報へ
           </button>
           <button type="button" onClick={onClose} className="quest-btn-secondary">
             閉じる
@@ -4490,8 +5194,9 @@ function QuickFilters({
 }) {
   const filters: Array<{ id: QuickFilter; label: string }> = [
     { id: "open", label: "未受注" },
-    { id: "urgent", label: "緊急" },
-    { id: "succession", label: "助っ人募集" },
+    { id: "recruiting", label: "募集中" },
+    { id: "help_wanted", label: "助っ人募集" },
+    { id: "in_progress", label: "挑戦中" },
     { id: "mine", label: "自分の依頼" },
     { id: "completed", label: "達成済み" },
   ];
@@ -4564,14 +5269,13 @@ function RecommendedQuest({
   onRequestDelete: (questId: number) => void;
   onOpenDetail: (questId: number) => void;
 }) {
-  const partySlots = [quest.challenger, quest.successor1, quest.successor2];
-  const openSlots = partySlots.filter(isEmptySlot).length;
+  const openSlots = Math.max(0, quest.requiredMembers - quest.participants.length);
   const reason =
-    quest.priority === "S"
-      ? "緊急度の高いクエストです。対応可能なら最優先で確認してください。"
+    quest.status === "help_wanted"
+      ? "助っ人を募集しています。空き枠があれば参加できます。"
       : quest.status === "open"
-        ? "まだ誰も挑戦していません。今すぐ受注できます。"
-        : "助っ人を募集しています。継承参加で進行を支援できます。";
+        ? "まだ誰も参加していません。対応可能なら参加できます。"
+        : "参加者を募集中です。必要人員がそろうと挑戦中になります。";
 
   return (
     <section className="recommended-quest space-y-1.5 p-1.5" aria-label="おすすめクエスト">
@@ -4692,7 +5396,7 @@ function GuideModal({
   const items = [
     {
       title: "まず操作するメンバーを選択",
-      text: "右下の「パーティ」から自分を選ぶと、挑戦・継承・討伐完了が自分名義になります。",
+      text: "右下の「パーティ」から自分を選ぶと、参加・助っ人募集・討伐完了が自分名義になります。",
     },
     {
       title: "迷ったらおすすめを見る",
@@ -4700,7 +5404,7 @@ function GuideModal({
     },
     {
       title: "状態で素早く絞り込み",
-      text: "未受注、緊急、助っ人募集、自分の依頼、達成済みを1タップで切り替えられます。",
+      text: "未受注、募集中、助っ人募集、挑戦中、自分の依頼、達成済みを1タップで切り替えられます。",
     },
     {
       title: "達成後は遠征へ",
@@ -4853,28 +5557,32 @@ function EmptyState({
   filter?: QuickFilter | null;
 }) {
   const title =
-    filter === "urgent"
-      ? "緊急クエストはありません"
-      : filter === "open"
-        ? "現在、受注可能なクエストはありません"
-        : filter === "succession"
+    filter === "open"
+        ? "現在、参加可能な依頼はありません"
+        : filter === "recruiting"
+          ? "募集中の依頼はありません"
+        : filter === "help_wanted"
           ? "助っ人募集はありません"
+        : filter === "in_progress"
+          ? "挑戦中の依頼はありません"
           : filter === "mine"
             ? "自分の依頼はありません"
             : nav === "my"
               ? "担当中のクエストはありません"
               : "ギルドは平穏です";
   const message =
-    filter === "urgent"
-      ? "緊急の合図は出ていません。通常クエストを落ち着いて進められます。"
-      : filter === "open"
-        ? "まだ誰も挑戦していないクエストはありません。手帳の任務から依頼化できます。"
-        : filter === "succession"
+    filter === "open"
+        ? "まだ誰も参加していない依頼はありません。手帳の任務から依頼書化できます。"
+        : filter === "recruiting"
+          ? "参加者が集まり始めている依頼はありません。"
+        : filter === "help_wanted"
           ? "現在、助っ人を募集しているクエストはありません。"
+        : filter === "in_progress"
+          ? "定員に達して進行中の依頼はありません。"
         : filter === "mine"
-            ? "対応できるクエストがあれば、挑戦または継承で参加できます。"
+            ? "対応できる依頼があれば、参加して進行できます。"
             : nav === "my"
-              ? "挑戦するか、継承者として参加してください。"
+              ? "ギルド依頼に参加するとここに表示されます。"
               : "必要な作業は冒険者手帳に記し、必要に応じてギルドへ依頼できます。";
 
   return (
@@ -4893,6 +5601,9 @@ function EmptyState({
 function CalendarPanel({
   events,
   quests,
+  tasks,
+  selectedPlayer,
+  ownPlayerName,
   staff,
   loading,
   monthDate,
@@ -4906,6 +5617,9 @@ function CalendarPanel({
 }: {
   events: CalendarEvent[];
   quests: Quest[];
+  tasks: AdventurerTask[];
+  selectedPlayer: string;
+  ownPlayerName: string;
   staff: PartyMember[];
   loading: boolean;
   monthDate: Date;
@@ -4930,11 +5644,46 @@ function CalendarPanel({
     }
     return map;
   }, [events]);
+  const visibleCalendarTasks = useMemo(
+    () => filterVisibleCalendarTasks(tasks, ownPlayerName),
+    [ownPlayerName, tasks],
+  );
+  const tasksByDate = useMemo(() => {
+    const map = new Map<string, AdventurerTask[]>();
+    for (const task of visibleCalendarTasks) {
+      if (!task.dueDate) continue;
+      const list = map.get(task.dueDate) ?? [];
+      list.push(task);
+      map.set(task.dueDate, list);
+    }
+    for (const list of map.values()) {
+      list.sort(compareCalendarTasks);
+    }
+    return map;
+  }, [visibleCalendarTasks]);
   const selectedEvents = eventsByDate.get(selectedDate) ?? [];
+  const selectedTasks = tasksByDate.get(selectedDate) ?? [];
+  const selectedPublicTasks = selectedTasks.filter(
+    (task) => task.ownerName !== ownPlayerName && task.isPublic,
+  );
+  const selectedOwnTasks = selectedTasks.filter(
+    (task) => task.ownerName === ownPlayerName,
+  );
   const weekRange = getWeekRange(new Date());
   const weekEvents = events
     .filter((event) => isDateWithinRange(event.eventDate, weekRange.start, weekRange.end))
     .sort(compareCalendarEvents);
+  const weekTasks = visibleCalendarTasks
+    .filter((task) =>
+      task.dueDate
+        ? isDateWithinRange(task.dueDate, weekRange.start, weekRange.end)
+        : false,
+    )
+    .sort(compareCalendarTasks);
+  const weekPublicTasks = weekTasks.filter(
+    (task) => task.ownerName !== ownPlayerName && task.isPublic,
+  );
+  const weekOwnTasks = weekTasks.filter((task) => task.ownerName === ownPlayerName);
   const activeStaff = staff.filter((member) => member.isActive !== false);
 
   const moveMonth = (offset: number) => {
@@ -4982,7 +5731,9 @@ function CalendarPanel({
             {formatCalendarMonth(monthDate)}
           </h4>
           <p className="text-xs text-slate-500">
-            {loading ? "読み込み中..." : `${events.length}件の予定`}
+            {loading
+              ? "読み込み中..."
+              : `予定 ${events.length}件 / 任務 ${visibleCalendarTasks.length}件`}
           </p>
         </div>
 
@@ -4994,8 +5745,12 @@ function CalendarPanel({
         <div className="calendar-month-grid mt-1 grid grid-cols-7 gap-1">
           {monthGrid.map((cell) => {
             const dayEvents = eventsByDate.get(cell.dateKey) ?? [];
-            const hasHighImportance = dayEvents.some((event) => event.importance >= 4);
+            const dayTasks = tasksByDate.get(cell.dateKey) ?? [];
+            const hasHighImportance =
+              dayEvents.some((event) => event.importance >= 4) ||
+              dayTasks.some((task) => task.importance >= 4);
             const isSelected = selectedDate === cell.dateKey;
+            const totalCount = dayEvents.length + dayTasks.length;
             return (
               <button
                 key={cell.dateKey}
@@ -5004,8 +5759,8 @@ function CalendarPanel({
                 className={`calendar-day-cell ${cell.inMonth ? "" : "is-muted"} ${cell.isToday ? "is-today" : ""} ${isSelected ? "is-selected" : ""} ${hasHighImportance ? "has-important" : ""}`}
               >
                 <span className="calendar-day-number">{cell.date.getDate()}</span>
-                {dayEvents.length > 0 && (
-                  <span className="calendar-day-count">{dayEvents.length}件</span>
+                {totalCount > 0 && (
+                  <span className="calendar-day-count">{totalCount}件</span>
                 )}
               </button>
             );
@@ -5020,7 +5775,9 @@ function CalendarPanel({
               <h3 className="pixel-window-title text-sm font-semibold">
                 {formatCalendarDate(selectedDate)}
               </h3>
-              <p className="mt-1 text-xs text-slate-500">日別詳細</p>
+              <p className="mt-1 text-xs text-slate-500">
+                予定と任務を分けて確認します
+              </p>
             </div>
             <button
               type="button"
@@ -5030,41 +5787,176 @@ function CalendarPanel({
               追加
             </button>
           </header>
-          <EventList
-            events={selectedEvents}
-            quests={quests}
-            emptyText="この日の予定はありません。"
-            onEdit={onEdit}
-            onOpenDetail={onOpenDetail}
-          />
+          <div className="grid gap-3">
+            <CalendarSection title="ギルド予定" subtitle="全員共有の予定">
+              <EventList
+                events={selectedEvents}
+                quests={quests}
+                tasks={visibleCalendarTasks}
+                emptyText="この日のギルド予定はありません。"
+                onEdit={onEdit}
+                onOpenDetail={onOpenDetail}
+              />
+            </CalendarSection>
+            <CalendarSection title="公開任務" subtitle="公開されている個人任務">
+              <TaskCalendarList
+                tasks={selectedPublicTasks}
+                emptyText="この日の公開任務はありません。"
+              />
+            </CalendarSection>
+            <CalendarSection title="自分の任務" subtitle={`${ownPlayerName || "自分"} の手帳`}>
+              <TaskCalendarList
+                tasks={selectedOwnTasks}
+                emptyText="この日の自分の任務はありません。"
+                mine
+              />
+            </CalendarSection>
+          </div>
         </section>
 
         <section className="rpg-frame min-h-0 p-3 sm:p-4">
           <header className="mb-3 border-b border-[var(--color-gold)]/20 pb-3">
             <h3 className="pixel-window-title text-sm font-semibold">
-              今週の予定
+              今週の予定と任務
             </h3>
             <p className="mt-1 text-xs text-slate-500">
-              今日から7日間 / 個人予定は {activeStaff.length}名から選択できます
+              今日から7日間 / 公開任務は {activeStaff.length}名のギルドから確認できます
             </p>
           </header>
-          <EventList
-            events={weekEvents}
-            quests={quests}
-            emptyText="今週の予定はありません。"
-            onEdit={onEdit}
-            onOpenDetail={onOpenDetail}
-            compact
-          />
+          <div className="grid gap-3">
+            <CalendarSection title="ギルド予定" subtitle="全員共有">
+              <EventList
+                events={weekEvents}
+                quests={quests}
+                tasks={visibleCalendarTasks}
+                emptyText="今週のギルド予定はありません。"
+                onEdit={onEdit}
+                onOpenDetail={onOpenDetail}
+                compact
+              />
+            </CalendarSection>
+            <CalendarSection title="公開任務" subtitle="他冒険者の公開任務">
+              <TaskCalendarList
+                tasks={weekPublicTasks}
+                emptyText="今週の公開任務はありません。"
+                compact
+              />
+            </CalendarSection>
+            <CalendarSection title="自分の任務" subtitle={ownPlayerName || selectedPlayer || "自分"}>
+              <TaskCalendarList
+                tasks={weekOwnTasks}
+                emptyText="今週の自分の任務はありません。"
+                compact
+                mine
+              />
+            </CalendarSection>
+          </div>
         </section>
       </div>
     </div>
   );
 }
 
+function CalendarSection({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="calendar-separated-section border-2 border-white/15 bg-black/18 p-3 shadow-[3px_3px_0_#000]">
+      <header className="mb-2 flex items-center justify-between gap-2 border-b border-white/10 pb-2">
+        <h4 className="pixel-title text-sm text-[var(--color-gold-bright)]">
+          {title}
+        </h4>
+        <span className="text-[10px] text-slate-500">{subtitle}</span>
+      </header>
+      {children}
+    </section>
+  );
+}
+
+function TaskCalendarList({
+  tasks,
+  emptyText,
+  compact = false,
+  mine = false,
+}: {
+  tasks: AdventurerTask[];
+  emptyText: string;
+  compact?: boolean;
+  mine?: boolean;
+}) {
+  if (tasks.length === 0) {
+    return <p className="py-3 text-center text-sm text-slate-500">{emptyText}</p>;
+  }
+
+  return (
+    <div className="grid gap-2">
+      {tasks.map((task) => (
+        <CalendarTaskCard
+          key={task.id}
+          task={task}
+          compact={compact}
+          mine={mine}
+        />
+      ))}
+    </div>
+  );
+}
+
+function CalendarTaskCard({
+  task,
+  compact,
+  mine,
+}: {
+  task: AdventurerTask;
+  compact: boolean;
+  mine: boolean;
+}) {
+  const dueTone = getTaskDueTone(task);
+  const overdue = dueTone === "overdue";
+  return (
+    <article
+      className={`calendar-task-card ${mine ? "is-mine" : "is-public"} ${
+        overdue ? "is-overdue" : ""
+      } ${compact ? "is-compact" : ""} p-3`}
+    >
+      <div className="flex min-w-0 items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex flex-wrap gap-1">
+            <span className={`calendar-tag ${mine ? "is-mine" : "is-task"}`}>
+              {mine ? "自分" : "任務"}
+            </span>
+            <span className="calendar-tag">緊急{task.priority}</span>
+            <span className="calendar-tag">重要{task.importance}</span>
+            {overdue && <span className="calendar-tag is-danger">期限超過</span>}
+            {task.isPublic && <span className="calendar-tag">公開</span>}
+          </div>
+          <h4 className="mt-2 truncate pixel-title text-sm text-slate-100">
+            {task.ownerName}: {task.title}
+          </h4>
+          <p className="mt-1 text-[11px] text-slate-500">
+            納期 {task.dueDate ? task.dueDate.replaceAll("-", "/") : "未定"} / {TASK_STATUS_LABELS[task.status]}
+          </p>
+        </div>
+      </div>
+      {!compact && task.description && (
+        <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-400">
+          {task.description}
+        </p>
+      )}
+    </article>
+  );
+}
+
 function EventList({
   events,
   quests,
+  tasks = [],
   emptyText,
   onEdit,
   onOpenDetail,
@@ -5072,6 +5964,7 @@ function EventList({
 }: {
   events: CalendarEvent[];
   quests: Quest[];
+  tasks?: AdventurerTask[];
   emptyText: string;
   onEdit: (eventId: number) => void;
   onOpenDetail: (eventId: number) => void;
@@ -5088,6 +5981,7 @@ function EventList({
           key={event.id}
           event={event}
           relatedQuests={getRelatedQuestsForEvent(event, quests)}
+          relatedTasks={getRelatedTasksForEvent(event, tasks)}
           onEdit={() => onEdit(event.id)}
           onOpenDetail={() => onOpenDetail(event.id)}
           compact={compact}
@@ -5100,12 +5994,14 @@ function EventList({
 function CalendarEventCard({
   event,
   relatedQuests,
+  relatedTasks,
   onEdit,
   onOpenDetail,
   compact = false,
 }: {
   event: CalendarEvent;
   relatedQuests: Quest[];
+  relatedTasks: AdventurerTask[];
   onEdit: () => void;
   onOpenDetail: () => void;
   compact?: boolean;
@@ -5120,6 +6016,7 @@ function CalendarEventCard({
       <div className="flex min-w-0 items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex flex-wrap gap-1">
+            <span className="calendar-tag is-event">予定</span>
             <span className="calendar-tag">{EVENT_TYPE_LABELS[event.eventType]}</span>
             <span className="calendar-tag">重要度{event.importance}</span>
             {deadlinePast && <span className="calendar-tag is-danger">期限超過</span>}
@@ -5156,6 +6053,12 @@ function CalendarEventCard({
           関連依頼: {relatedQuests.map((quest) => quest.title).join(" / ")}
         </p>
       )}
+      {relatedTasks.length > 0 && (
+        <p className="mt-2 text-[11px] text-[#9ff0af]">
+          関連任務:{" "}
+          {relatedTasks.map((task) => `${task.ownerName}: ${task.title}`).join(" / ")}
+        </p>
+      )}
     </article>
   );
 }
@@ -5166,6 +6069,26 @@ function compareCalendarEvents(a: CalendarEvent, b: CalendarEvent) {
   const byTime = (a.startTime || "99:99").localeCompare(b.startTime || "99:99");
   if (byTime !== 0) return byTime;
   return b.importance - a.importance;
+}
+
+function compareCalendarTasks(a: AdventurerTask, b: AdventurerTask) {
+  const byDate = (a.dueDate ?? "9999-12-31").localeCompare(
+    b.dueDate ?? "9999-12-31",
+  );
+  if (byDate !== 0) return byDate;
+  const byUrgency = b.priority - a.priority;
+  if (byUrgency !== 0) return byUrgency;
+  const byImportance = b.importance - a.importance;
+  if (byImportance !== 0) return byImportance;
+  return b.updatedAt.localeCompare(a.updatedAt);
+}
+
+function filterVisibleCalendarTasks(tasks: AdventurerTask[], ownPlayerName: string) {
+  return tasks.filter((task) => {
+    if (!task.dueDate) return false;
+    if (task.ownerName === ownPlayerName) return true;
+    return task.isPublic;
+  });
 }
 
 function getRelatedQuestsForEvent(event: CalendarEvent, quests: Quest[]) {
@@ -5460,7 +6383,7 @@ function GuildOverview({
             onClick={onOpenNotices}
             className="quest-btn-ghost min-h-11 px-3 text-xs"
           >
-            気付きの書 {noticeCount + requestCount}
+            ギルド速報 {noticeCount + requestCount}
           </button>
         </header>
         <div className="grid grid-cols-2 gap-3">
@@ -5505,7 +6428,7 @@ function GuildOverview({
       <section className="rpg-frame p-3 sm:p-4">
         <header className="mb-3 pb-3 border-b border-[var(--color-gold)]/20">
           <h3 className="pixel-window-title text-sm font-semibold">
-            冒険の記録
+            冒険ログ・遠征ログ・依頼ログ
           </h3>
           <p className="text-[10px] text-slate-500 mt-1">
             最近のギルド活動 · リアルタイム同期

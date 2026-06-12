@@ -3,8 +3,12 @@ import {
   type CompletedQuestEntry,
   type Priority,
   type Quest,
+  type QuestDifficulty,
   type QuestLevel,
   type QuestStatus,
+  QUEST_DIFFICULTY_BY_LEVEL,
+  QUEST_LEVEL_BY_DIFFICULTY,
+  ESTIMATED_MINUTE_OPTIONS,
 } from "../data/quests";
 
 export interface QuestRow {
@@ -12,14 +16,19 @@ export interface QuestRow {
   requester: string;
   title: string;
   level: string;
+  difficulty?: number | null;
   priority: string;
   urgency?: number | null;
   importance?: number | null;
   estimated_time: string | null;
+  estimated_minutes?: number | null;
+  due_at?: string | null;
   description: string | null;
   challenger: string | null;
   successor1: string | null;
   successor2: string | null;
+  required_members?: number | null;
+  participants?: string[] | null;
   status: string;
   created_at: string;
   completed_at: string | null;
@@ -28,8 +37,9 @@ export interface QuestRow {
 
 const STATUSES: QuestStatus[] = [
   "open",
+  "recruiting",
   "in_progress",
-  "succession_needed",
+  "help_wanted",
   "completed",
 ];
 
@@ -44,26 +54,73 @@ function slotToDb(value: string): string | null {
 }
 
 function parseStatus(value: string): QuestStatus {
+  if (value === "succession_needed") return "help_wanted";
   if (STATUSES.includes(value as QuestStatus)) {
     return value as QuestStatus;
   }
   return "open";
 }
 
+function parseDifficulty(value: number | null | undefined, level: string): QuestDifficulty {
+  if (Number.isFinite(value)) {
+    return Math.min(5, Math.max(1, Math.round(Number(value)))) as QuestDifficulty;
+  }
+  const normalized = level as QuestLevel;
+  return QUEST_DIFFICULTY_BY_LEVEL[normalized] ?? 3;
+}
+
+export function formatEstimatedMinutes(minutes: number | null | undefined): string {
+  if (!Number.isFinite(minutes)) return EMPTY_SLOT;
+  const option = ESTIMATED_MINUTE_OPTIONS.find((item) => item.value === minutes);
+  if (option) return option.label;
+  return `${minutes}分`;
+}
+
+function parseParticipants(row: QuestRow): string[] {
+  const source =
+    row.participants && row.participants.length > 0
+      ? row.participants
+      : [row.challenger, row.successor1, row.successor2];
+  return source
+    .map((name) => (name ?? "").trim())
+    .filter((name) => name.length > 0 && name !== EMPTY_SLOT)
+    .filter((name, index, array) => array.indexOf(name) === index)
+    .slice(0, 3);
+}
+
+function clampMembers(value: number | null | undefined): number {
+  if (!Number.isFinite(value)) return 1;
+  return Math.min(3, Math.max(1, Math.round(Number(value))));
+}
+
 export function rowToQuest(row: QuestRow): Quest {
+  const difficulty = parseDifficulty(row.difficulty, row.level);
+  const estimatedMinutes = Number.isFinite(row.estimated_minutes)
+    ? Math.max(1, Math.round(Number(row.estimated_minutes)))
+    : null;
+  const participants = parseParticipants(row);
+  const requiredMembers = clampMembers(row.required_members);
+
   return {
     id: row.id,
     requester: row.requester,
     title: row.title,
-    level: row.level as QuestLevel,
+    level: QUEST_LEVEL_BY_DIFFICULTY[difficulty],
+    difficulty,
     priority: row.priority as Priority,
     urgency: clampScore(row.urgency),
     importance: clampScore(row.importance),
-    estimatedTime: row.estimated_time?.trim() || EMPTY_SLOT,
+    estimatedTime:
+      row.estimated_time?.trim() ||
+      formatEstimatedMinutes(estimatedMinutes),
+    estimatedMinutes,
+    dueAt: row.due_at ?? null,
     description: row.description ?? "",
-    challenger: slotFromDb(row.challenger),
-    successor1: slotFromDb(row.successor1),
-    successor2: slotFromDb(row.successor2),
+    challenger: slotFromDb(participants[0]),
+    successor1: slotFromDb(participants[1]),
+    successor2: slotFromDb(participants[2]),
+    requiredMembers,
+    participants,
     status: parseStatus(row.status),
     createdAt: row.created_at,
     completedAt: row.completed_at,
@@ -72,19 +129,34 @@ export function rowToQuest(row: QuestRow): Quest {
 }
 
 export function questToRow(quest: Quest): Omit<QuestRow, "id"> {
+  const participants = quest.participants
+    .map((name) => name.trim())
+    .filter(Boolean)
+    .filter((name, index, array) => array.indexOf(name) === index)
+    .slice(0, quest.requiredMembers);
+
   return {
     requester: quest.requester,
     title: quest.title,
-    level: quest.level,
+    level: QUEST_LEVEL_BY_DIFFICULTY[quest.difficulty],
+    difficulty: quest.difficulty,
     priority: quest.priority,
     urgency: quest.urgency,
     importance: quest.importance,
+    estimated_minutes: quest.estimatedMinutes,
+    due_at: quest.dueAt,
     estimated_time:
-      quest.estimatedTime === EMPTY_SLOT ? null : quest.estimatedTime,
+      quest.estimatedTime === EMPTY_SLOT
+        ? quest.estimatedMinutes == null
+          ? null
+          : formatEstimatedMinutes(quest.estimatedMinutes)
+        : quest.estimatedTime,
     description: quest.description || null,
-    challenger: slotToDb(quest.challenger),
-    successor1: slotToDb(quest.successor1),
-    successor2: slotToDb(quest.successor2),
+    challenger: slotToDb(participants[0] ?? EMPTY_SLOT),
+    successor1: slotToDb(participants[1] ?? EMPTY_SLOT),
+    successor2: slotToDb(participants[2] ?? EMPTY_SLOT),
+    required_members: quest.requiredMembers,
+    participants,
     status: quest.status,
     created_at: quest.createdAt ?? new Date().toISOString(),
     completed_at: quest.completedAt ?? null,

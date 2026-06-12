@@ -1,4 +1,8 @@
-import type { AdventurerTask, AdventurerTaskFormData } from "../data/adventurerTasks";
+import type {
+  AdventurerTask,
+  AdventurerTaskFormData,
+  QuestPublishFormData,
+} from "../data/adventurerTasks";
 import {
   getDeadlineNoticeCopy,
   type GuildNotice,
@@ -237,7 +241,7 @@ export async function acceptGuildRequest(
 ): Promise<void> {
   const task = await createAdventurerTask(requestToTaskForm(request), actorName);
   if (request.requestType === "assignment") {
-    await delegateTaskToQuest(task, actorName);
+    await delegateTaskToQuest(task, actorName, requestToQuestPublishForm(request));
   }
 
   const { error } = await requireSupabase()
@@ -387,6 +391,32 @@ function requestToTaskForm(
     calendarEventId: request.calendarEventId,
     isPublic: false,
   };
+}
+
+function requestToQuestPublishForm(
+  request: Pick<
+    GuildRequest,
+    "taskTitle" | "taskDescription" | "priority" | "importance" | "dueDate"
+  >,
+): QuestPublishFormData {
+  return {
+    title: request.taskTitle,
+    description: request.taskDescription,
+    difficulty: difficultyFromScores(request.priority, request.importance),
+    estimatedMinutes: 30,
+    dueDate: request.dueDate || new Date().toISOString().slice(0, 10),
+    dueTime: "18:00",
+    requiredMembers: 1,
+  };
+}
+
+function difficultyFromScores(priority: number, importance: number) {
+  const score = priority * importance;
+  if (score >= 20) return 5;
+  if (score >= 12) return 4;
+  if (score >= 8) return 3;
+  if (score >= 4) return 2;
+  return 1;
 }
 
 function parseNoticeType(value: string): GuildNoticeType {

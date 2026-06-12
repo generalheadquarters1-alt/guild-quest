@@ -3,9 +3,9 @@ import { formatCompletedDate } from "../lib/questUtils";
 
 const ACTION_SENTENCE: Record<QuestLogAction, string> = {
   created: "を掲示しました。",
-  accepted: "を受注しました。",
+  accepted: "に参加しました。",
   succession_requested: "の助っ人を募集しました。",
-  successor_added: "を継承しました。",
+  successor_added: "に助っ人参加しました。",
   completed: "を達成しました。",
   edited: "を書き換えました。",
   deleted: "を記録から外しました。",

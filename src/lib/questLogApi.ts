@@ -89,7 +89,7 @@ export async function insertQuestLog(params: {
 
 export const LOG_ACTION_LABELS: Record<QuestLogAction, string> = {
   created: "新しい依頼を掲示",
-  accepted: "クエストに挑戦",
+  accepted: "ギルド依頼に参加",
   succession_requested: "助っ人募集を掲示",
   successor_added: "助っ人として参加",
   completed: "討伐完了",

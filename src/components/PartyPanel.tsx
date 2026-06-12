@@ -31,17 +31,17 @@ export function PartyPanel({
   className = "",
 }: PartyPanelProps) {
   return (
-    <aside className={`rpg-frame p-4 flex flex-col ${className}`}>
-      <header className="mb-4 pb-3 border-b border-[var(--color-gold)]/20">
+    <aside className={`rpg-frame p-3 flex flex-col ${className}`}>
+      <header className="mb-2 pb-2 border-b border-[var(--color-gold)]/20">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="pixel-window-title text-base sm:text-lg font-semibold">
+          <h2 className="pixel-window-title text-sm sm:text-base font-semibold">
             冒険者パーティ
           </h2>
           <span className="pixel-chip px-2 py-1 text-xs text-slate-300">
             {staff.length} / 10
           </span>
         </div>
-        <p className="text-[10px] text-slate-500 mt-1 tracking-wider">
+        <p className="text-[10px] text-slate-500 mt-0.5 tracking-wider">
           操作する冒険者を選択
         </p>
       </header>
@@ -57,7 +57,7 @@ export function PartyPanel({
           ギルド名簿にスタッフが登録されていません。migration 002を実行してください。
         </p>
       ) : (
-        <ul className="flex flex-col gap-3 flex-1 custom-scroll overflow-y-auto max-h-[50vh] lg:max-h-none">
+        <ul className="flex min-h-0 flex-1 flex-col gap-2 custom-scroll overflow-y-auto max-h-[50vh] lg:max-h-none">
           {staff.map((member, i) => {
             const isSelected = member.name === selectedPlayer;
             const expProgress = member.exp % 100;
@@ -66,7 +66,7 @@ export function PartyPanel({
                 <button
                   type="button"
                   onClick={() => onSelectPlayer(member.name)}
-                  className={`party-member-card group tap-card pixel-menu-button w-full p-3 border text-left transition-all duration-300 animate-fade-up ${
+                  className={`party-member-card group tap-card pixel-menu-button w-full p-2 border text-left transition-all duration-300 animate-fade-up ${
                     isSelected
                       ? "is-selected pl-7"
                       : "border-white/20 bg-black/20 hover:border-[var(--color-gold)]/60 hover:bg-[var(--color-panel)]/80"
@@ -76,13 +76,13 @@ export function PartyPanel({
                     animationFillMode: "both",
                   }}
                 >
-                  <div className="flex items-center gap-3 mb-2">
+                  <div className="flex items-center gap-2 mb-1.5">
                     <AvatarSprite
                       avatarType={member.avatarType}
                       fallback={member.avatar}
                       alt={member.name}
                       frame={member.avatarFrame}
-                      size="md"
+                      size="sm"
                       className={`pixel-avatar transition-transform ${FRAME_STYLES[member.avatarFrame]} ${
                         isSelected
                           ? "scale-105"
@@ -113,7 +113,7 @@ export function PartyPanel({
                     value={expProgress}
                     color="from-[var(--color-gold-dim)] to-[var(--color-gold-bright)]"
                   />
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-2 gap-1.5">
                     <Bar
                       label="HP"
                       value={member.hp}
@@ -132,11 +132,11 @@ export function PartyPanel({
         </ul>
       )}
 
-      <footer className="mt-4 pt-3 border-t border-[var(--color-gold)]/15 text-center">
+      <footer className="mt-2 pt-2 border-t border-[var(--color-gold)]/15 text-center">
         <p className="text-[10px] text-slate-500 tracking-wider">
           操作中の冒険者
         </p>
-        <p className="pixel-title text-lg font-semibold gold-text mt-1 truncate px-2">
+        <p className="pixel-title text-base font-semibold gold-text mt-1 truncate px-2">
           {selectedPlayer || "—"}
         </p>
       </footer>

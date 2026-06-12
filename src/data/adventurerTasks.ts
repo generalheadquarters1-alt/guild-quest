@@ -3,6 +3,11 @@ import {
   parseDateInput,
   toDateInputValue,
 } from "./calendar";
+import {
+  ESTIMATED_MINUTE_OPTIONS,
+  QUEST_DIFFICULTY_LABELS,
+  type QuestDifficulty,
+} from "./quests";
 
 export type AdventurerTaskStatus =
   | "todo"
@@ -38,6 +43,16 @@ export interface AdventurerTaskFormData {
   isPublic: boolean;
 }
 
+export interface QuestPublishFormData {
+  title: string;
+  description: string;
+  difficulty: QuestDifficulty;
+  estimatedMinutes: number;
+  dueDate: string;
+  dueTime: string;
+  requiredMembers: number;
+}
+
 export const EMPTY_TASK_FORM: AdventurerTaskFormData = {
   title: "",
   description: "",
@@ -47,6 +62,18 @@ export const EMPTY_TASK_FORM: AdventurerTaskFormData = {
   calendarEventId: null,
   isPublic: false,
 };
+
+export const EMPTY_QUEST_PUBLISH_FORM: QuestPublishFormData = {
+  title: "",
+  description: "",
+  difficulty: 3,
+  estimatedMinutes: 30,
+  dueDate: "",
+  dueTime: "",
+  requiredMembers: 1,
+};
+
+export { ESTIMATED_MINUTE_OPTIONS, QUEST_DIFFICULTY_LABELS };
 
 export const TASK_STATUS_LABELS: Record<AdventurerTaskStatus, string> = {
   todo: "未着手",

@@ -58,7 +58,7 @@ export interface GuildRequestFormData {
 export const NOTICE_TYPE_LABELS: Record<GuildNoticeType, string> = {
   deadline_warning: "納期警告",
   overdue: "期限超過",
-  missing_task: "気付き",
+  missing_task: "速報",
   suggestion: "助言",
   system: "システム",
 };

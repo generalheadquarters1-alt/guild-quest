@@ -35,6 +35,11 @@ export async function insertQuest(
     priority: form.priority,
     urgency: form.urgency,
     importance: form.importance,
+    difficulty: form.difficulty ?? 3,
+    estimated_minutes: form.estimatedMinutes ?? null,
+    due_at: form.dueAt ?? null,
+    required_members: form.requiredMembers ?? 1,
+    participants: [],
     estimated_time:
       form.estimatedTime === EMPTY_SLOT ? null : form.estimatedTime,
     description: form.description || null,
@@ -100,9 +105,13 @@ export async function acceptQuest(
   quest: Quest,
   playerName: string,
 ): Promise<Quest> {
+  const participants = addParticipant(quest, playerName);
   const next: Quest = {
     ...quest,
-    challenger: playerName,
+    participants,
+    challenger: participants[0] ?? EMPTY_SLOT,
+    successor1: participants[1] ?? EMPTY_SLOT,
+    successor2: participants[2] ?? EMPTY_SLOT,
   };
   next.status = deriveStatusAfterRosterChange(next);
   const updated = await updateQuestRecord(next);
@@ -121,12 +130,14 @@ export async function becomeSuccessor(
   quest: Quest,
   playerName: string,
 ): Promise<Quest> {
-  let next = { ...quest };
-  if (next.successor1 === EMPTY_SLOT) {
-    next = { ...next, successor1: playerName };
-  } else if (next.successor2 === EMPTY_SLOT) {
-    next = { ...next, successor2: playerName };
-  }
+  const participants = addParticipant(quest, playerName);
+  const next: Quest = {
+    ...quest,
+    participants,
+    challenger: participants[0] ?? EMPTY_SLOT,
+    successor1: participants[1] ?? EMPTY_SLOT,
+    successor2: participants[2] ?? EMPTY_SLOT,
+  };
   next.status = deriveStatusAfterRosterChange(next);
   const updated = await updateQuestRecord(next);
 
@@ -146,7 +157,7 @@ export async function requestSuccession(
 ): Promise<Quest> {
   const updated = await updateQuestRecord({
     ...quest,
-    status: "succession_needed",
+    status: "help_wanted",
   });
 
   await insertQuestLog({
@@ -170,11 +181,14 @@ export async function completeQuest(
   });
 
   const baseExp = getQuestBaseExp(quest);
-  await awardPlayerExp([
-    { name: quest.challenger, exp: baseExp },
-    { name: quest.successor1, exp: Math.floor(baseExp * 0.6) },
-    { name: quest.successor2, exp: Math.floor(baseExp * 0.6) },
-  ].filter((award) => !isEmptySlot(award.name)));
+  await awardPlayerExp(
+    quest.participants
+      .map((name, index) => ({
+        name,
+        exp: index === 0 ? baseExp : Math.floor(baseExp * 0.6),
+      }))
+      .filter((award) => !isEmptySlot(award.name)),
+  );
 
   await awardExpeditionTickets(
     actorName,
@@ -198,9 +212,15 @@ export async function reopenQuest(
   actorName: string,
   reason?: string,
 ): Promise<Quest> {
+  const baseStatus =
+    quest.participants.length <= 0
+      ? "open"
+      : quest.participants.length >= quest.requiredMembers
+        ? "in_progress"
+        : "recruiting";
   const reopened: Quest = {
     ...quest,
-    status: deriveStatusAfterRosterChange(quest),
+    status: deriveStatusAfterRosterChange({ ...quest, status: baseStatus }),
     completedAt: null,
   };
   const updated = await updateQuestRecord(reopened);
@@ -226,10 +246,14 @@ export async function editQuestFields(
     requester: form.requester,
     title: form.title,
     level: form.level,
+    difficulty: form.difficulty ?? quest.difficulty,
     priority: form.priority,
     urgency: form.urgency,
     importance: form.importance,
     estimatedTime: form.estimatedTime,
+    estimatedMinutes: form.estimatedMinutes ?? quest.estimatedMinutes,
+    dueAt: form.dueAt ?? quest.dueAt,
+    requiredMembers: form.requiredMembers ?? quest.requiredMembers,
     description: form.description,
     linkedEventId: form.linkedEventId,
   });
@@ -242,4 +266,14 @@ export async function editQuestFields(
   });
 
   return updated;
+}
+
+function addParticipant(quest: Quest, playerName: string): string[] {
+  const next = quest.participants
+    .map((name) => name.trim())
+    .filter(Boolean);
+  if (!next.includes(playerName) && next.length < quest.requiredMembers) {
+    next.push(playerName);
+  }
+  return next.slice(0, quest.requiredMembers);
 }

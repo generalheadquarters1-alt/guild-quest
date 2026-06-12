@@ -7,15 +7,25 @@ import {
   type CalendarEvent,
 } from "../data/calendar";
 import type { PartyMember, Priority, Quest, QuestLevel } from "../data/quests";
+import {
+  ESTIMATED_MINUTE_OPTIONS,
+  QUEST_DIFFICULTY_LABELS,
+  QUEST_LEVEL_BY_DIFFICULTY,
+  type QuestDifficulty,
+} from "../data/quests";
 
 export interface QuestFormData {
   requester: string;
   title: string;
   level: QuestLevel;
+  difficulty: QuestDifficulty;
   priority: Priority;
   urgency: number;
   importance: number;
   estimatedTime: string;
+  estimatedMinutes: number | null;
+  dueAt: string | null;
+  requiredMembers: number;
   description: string;
   linkedEventId: number | null;
 }
@@ -32,31 +42,20 @@ interface QuestFormModalProps {
   submitting?: boolean;
 }
 
-const LEVELS: QuestLevel[] = [
-  "Novice",
-  "Easy",
-  "Normal",
-  "Hard",
-  "Legend",
-];
-const PRIORITIES: Priority[] = ["S", "A", "B", "C"];
-
-const LEVEL_LABELS: Record<QuestLevel, string> = {
-  Novice: "見習い",
-  Easy: "易",
-  Normal: "標準",
-  Hard: "難",
-  Legend: "伝説",
-};
+const DIFFICULTIES: QuestDifficulty[] = [1, 2, 3, 4, 5];
 
 const EMPTY_FORM: QuestFormData = {
   requester: "",
   title: "",
   level: "Normal",
+  difficulty: 3,
   priority: "B",
   urgency: 3,
   importance: 3,
   estimatedTime: "",
+  estimatedMinutes: 30,
+  dueAt: null,
+  requiredMembers: 1,
   description: "",
   linkedEventId: null,
 };
@@ -66,10 +65,14 @@ function questToForm(quest: Quest): QuestFormData {
     requester: quest.requester,
     title: quest.title,
     level: quest.level,
+    difficulty: quest.difficulty,
     priority: quest.priority,
     urgency: quest.urgency,
     importance: quest.importance,
     estimatedTime: quest.estimatedTime === "—" ? "" : quest.estimatedTime,
+    estimatedMinutes: quest.estimatedMinutes,
+    dueAt: quest.dueAt,
+    requiredMembers: quest.requiredMembers,
     description: quest.description,
     linkedEventId: quest.linkedEventId ?? null,
   };
@@ -147,7 +150,15 @@ export function QuestFormModal({
       ...form,
       requester: form.requester.trim(),
       title: form.title.trim(),
-      estimatedTime: form.estimatedTime.trim() || "—",
+      level: QUEST_LEVEL_BY_DIFFICULTY[form.difficulty],
+      priority: priorityFromScores(form.urgency, form.importance),
+      estimatedTime:
+        (ESTIMATED_MINUTE_OPTIONS.find(
+          (option) => option.value === form.estimatedMinutes,
+        )?.label ??
+          form.estimatedTime.trim()) ||
+        "—",
+      dueAt: form.dueAt,
       description: form.description.trim(),
     });
     if (mode === "create") setForm(EMPTY_FORM);
@@ -206,7 +217,7 @@ export function QuestFormModal({
             </p>
           )}
 
-          <FormField label="クエスト名" required>
+          <FormField label="依頼名" required>
             <input
               type="text"
               required
@@ -219,30 +230,32 @@ export function QuestFormModal({
           </FormField>
 
           <div className="grid grid-cols-2 gap-3">
-            <FormField label="Lv">
+            <FormField label="難易度">
               <select
-                value={form.level}
-                onChange={(e) => update("level", e.target.value as QuestLevel)}
+                value={form.difficulty}
+                onChange={(e) =>
+                  update("difficulty", Number(e.target.value) as QuestDifficulty)
+                }
                 disabled={submitting}
                 className="quest-input"
               >
-                {LEVELS.map((l) => (
-                  <option key={l} value={l}>
-                    {LEVEL_LABELS[l]}
+                {DIFFICULTIES.map((difficulty) => (
+                  <option key={difficulty} value={difficulty}>
+                    Lv {QUEST_DIFFICULTY_LABELS[difficulty]}
                   </option>
                 ))}
               </select>
             </FormField>
-            <FormField label="装飾ランク">
+            <FormField label="必要人員">
               <select
-                value={form.priority}
-                onChange={(e) => update("priority", e.target.value as Priority)}
+                value={form.requiredMembers}
+                onChange={(e) => update("requiredMembers", Number(e.target.value))}
                 disabled={submitting}
                 className="quest-input"
               >
-                {PRIORITIES.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
+                {[1, 2, 3].map((count) => (
+                  <option key={count} value={count}>
+                    {count}人
                   </option>
                 ))}
               </select>
@@ -273,16 +286,50 @@ export function QuestFormModal({
             </span>
           </div>
 
-          <FormField label="推定時間">
-            <input
-              type="text"
-              value={form.estimatedTime}
-              onChange={(e) => update("estimatedTime", e.target.value)}
-              disabled={submitting}
-              placeholder="例: 30分, 2h, 1日"
-              className="quest-input"
-            />
-          </FormField>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <FormField label="推定時間">
+              <select
+                value={form.estimatedMinutes ?? ""}
+                onChange={(e) => update("estimatedMinutes", Number(e.target.value))}
+                disabled={submitting}
+                className="quest-input"
+              >
+                {ESTIMATED_MINUTE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+            <FormField label="納期">
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="date"
+                  value={dateFromIso(form.dueAt)}
+                  onChange={(e) =>
+                    update(
+                      "dueAt",
+                      composeDueIso(e.target.value, timeFromIso(form.dueAt)),
+                    )
+                  }
+                  disabled={submitting}
+                  className="quest-input"
+                />
+                <input
+                  type="time"
+                  value={timeFromIso(form.dueAt)}
+                  onChange={(e) =>
+                    update(
+                      "dueAt",
+                      composeDueIso(dateFromIso(form.dueAt), e.target.value),
+                    )
+                  }
+                  disabled={submitting}
+                  className="quest-input"
+                />
+              </div>
+            </FormField>
+          </div>
 
           <FormField label="関連予定">
             <select
@@ -557,4 +604,38 @@ function ScoreField({
       </div>
     </div>
   );
+}
+
+function priorityFromScores(urgency: number, importance: number): Priority {
+  const score = urgency * importance;
+  if (score >= 20) return "S";
+  if (score >= 12) return "A";
+  if (score >= 6) return "B";
+  return "C";
+}
+
+function dateFromIso(value: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function timeFromIso(value: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${String(date.getHours()).padStart(2, "0")}:${String(
+    date.getMinutes(),
+  ).padStart(2, "0")}`;
+}
+
+function composeDueIso(dateValue: string, timeValue: string) {
+  if (!dateValue) return null;
+  const date = new Date(`${dateValue}T${timeValue || "23:59"}`);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
 }
