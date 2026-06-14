@@ -2394,6 +2394,25 @@ textarea:focus-visible {
   margin-top: 0.32rem;
 }
 
+.quest-owner-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  margin-top: 0.22rem;
+  color: #4a2e19;
+  font-family: var(--font-pixel);
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.quest-owner-line span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .quest-priority-gauges {
   display: flex;
   flex-wrap: wrap;
@@ -2749,6 +2768,11 @@ textarea:focus-visible {
   .quest-priority-gauges {
     gap: 0.18rem 0.3rem;
     margin-top: 0.22rem;
+  }
+
+  .quest-owner-line {
+    margin-top: 0.16rem;
+    font-size: 0.56rem;
   }
 
   .quest-priority-gauge {

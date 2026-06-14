@@ -20,6 +20,7 @@ export type AdventurerTaskTab = "today" | "week" | "month" | "future";
 export interface AdventurerTask {
   id: number;
   ownerName: string;
+  originalOwnerName: string;
   title: string;
   description: string;
   status: AdventurerTaskStatus;
@@ -51,6 +52,13 @@ export interface QuestPublishFormData {
   dueDate: string;
   dueTime: string;
   requiredMembers: number;
+}
+
+export interface DirectQuestPostFormData extends QuestPublishFormData {
+  requesterName: string;
+  urgency: number;
+  importance: number;
+  calendarEventId: number | null;
 }
 
 export const EMPTY_TASK_FORM: AdventurerTaskFormData = {

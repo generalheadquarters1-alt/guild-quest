@@ -2,7 +2,10 @@ import type { QuestFormData } from "../components/QuestFormModal";
 import { getExpeditionTicketsForRank } from "../data/expeditions";
 import { EMPTY_SLOT, type Quest } from "../data/quests";
 import { awardExpeditionTickets } from "./expeditionApi";
-import { completeTaskLinkedToQuest } from "./adventurerTaskApi";
+import {
+  completeTaskLinkedToQuest,
+  transferTaskToQuestParticipant,
+} from "./adventurerTaskApi";
 import { insertQuestLog } from "./questLogApi";
 import { awardPlayerExp } from "./staffApi";
 import {
@@ -105,6 +108,7 @@ export async function acceptQuest(
   quest: Quest,
   playerName: string,
 ): Promise<Quest> {
+  const hadNoParticipants = quest.participants.length === 0;
   const participants = addParticipant(quest, playerName);
   const next: Quest = {
     ...quest,
@@ -115,6 +119,10 @@ export async function acceptQuest(
   };
   next.status = deriveStatusAfterRosterChange(next);
   const updated = await updateQuestRecord(next);
+
+  if (hadNoParticipants && participants[0]) {
+    await transferTaskToQuestParticipant(updated, participants[0]);
+  }
 
   await insertQuestLog({
     questId: updated.id,
@@ -130,6 +138,7 @@ export async function becomeSuccessor(
   quest: Quest,
   playerName: string,
 ): Promise<Quest> {
+  const hadNoParticipants = quest.participants.length === 0;
   const participants = addParticipant(quest, playerName);
   const next: Quest = {
     ...quest,
@@ -140,6 +149,10 @@ export async function becomeSuccessor(
   };
   next.status = deriveStatusAfterRosterChange(next);
   const updated = await updateQuestRecord(next);
+
+  if (hadNoParticipants && participants[0]) {
+    await transferTaskToQuestParticipant(updated, participants[0]);
+  }
 
   await insertQuestLog({
     questId: updated.id,

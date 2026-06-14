@@ -10,6 +10,7 @@ import {
   type PartyMember,
   type Quest,
 } from "../data/quests";
+import type { AdventurerTask } from "../data/adventurerTasks";
 import {
   canAcceptQuest,
   canMarkComplete,
@@ -42,6 +43,7 @@ interface QuestCardProps {
   onRequestDelete: (questId: number) => void;
   onOpenDetail: (questId: number) => void;
   relatedEvent?: CalendarEvent | null;
+  linkedTask?: AdventurerTask | null;
   disabled?: boolean;
   featured?: boolean;
 }
@@ -56,6 +58,7 @@ export function QuestCard({
   onRequestComplete,
   onOpenDetail,
   relatedEvent,
+  linkedTask,
   disabled = false,
   featured = false,
 }: QuestCardProps) {
@@ -165,6 +168,13 @@ export function QuestCard({
               </div>
             )}
           </div>
+
+          {linkedTask && (
+            <div className="quest-owner-line">
+              <span>依頼者: {linkedTask.originalOwnerName || quest.requester}</span>
+              <span>担当: {linkedTask.ownerName}</span>
+            </div>
+          )}
 
           {relatedEvent && (
             <div className="mt-1 flex flex-wrap gap-1">

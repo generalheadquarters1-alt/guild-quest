@@ -20,10 +20,12 @@ const ACTION_SENTENCE: Record<QuestLogAction, string> = {
   task_updated: "を書き換えました。",
   task_deleted: "を手帳から外しました。",
   task_delegated: "をギルドへ依頼しました。",
+  task_transferred: "の担当を引き継ぎました。",
   task_completed: "を達成しました。",
   guild_suggestion_sent: "の助言を送りました。",
   guild_assignment_sent: "を指名依頼しました。",
   guild_directive_issued: "のギルド指令を発令しました。",
+  direct_quest_posted: "をギルドへ直掲示しました。",
   guild_request_accepted: "を承認しました。",
   guild_request_rejected: "を却下しました。",
 };

@@ -64,6 +64,7 @@ import {
   type AdventurerTask,
   type AdventurerTaskFormData,
   type AdventurerTaskTab,
+  type DirectQuestPostFormData,
   type QuestPublishFormData,
 } from "./data/adventurerTasks";
 import {
@@ -91,6 +92,7 @@ import { useCalendarEvents } from "./hooks/useCalendarEvents";
 import { useAdventurerTasks } from "./hooks/useAdventurerTasks";
 import { useGuildOperations } from "./hooks/useGuildOperations";
 import type { QuestLog } from "./lib/questLogApi";
+import { insertQuestLog } from "./lib/questLogApi";
 import { useQuestLogs } from "./hooks/useQuestLogs";
 import { useQuests } from "./hooks/useQuests";
 import { useStaff } from "./hooks/useStaff";
@@ -191,6 +193,15 @@ const GUIDE_STORAGE_KEY = "todo-quest-guide-seen";
 const GUILD_ACCESS_KEY = "guild_quest_access_granted";
 const LEGACY_GUILD_ACCESS_KEY = "guild-quest-access";
 const GUILD_CODE = import.meta.env.VITE_GUILD_CODE?.trim() ?? "";
+const DIRECT_POST_ESTIMATED_OPTIONS = [
+  { value: 10, label: "10分" },
+  { value: 15, label: "15分" },
+  { value: 30, label: "30分" },
+  { value: 60, label: "1時間" },
+  { value: 120, label: "2時間" },
+  { value: 240, label: "半日" },
+  { value: 480, label: "終日" },
+] as const;
 
 type ModalState =
   | { type: "closed" }
@@ -211,6 +222,8 @@ type TaskDetailState =
 type QuestPublishState =
   | { type: "closed" }
   | { type: "open"; taskId: number };
+
+type DirectQuestPostState = { type: "closed" } | { type: "open" };
 
 type GuildRequestFormState =
   | { type: "closed" }
@@ -518,6 +531,8 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
   const [questPublish, setQuestPublish] = useState<QuestPublishState>({
     type: "closed",
   });
+  const [directQuestPost, setDirectQuestPost] =
+    useState<DirectQuestPostState>({ type: "closed" });
   const [guildRequestForm, setGuildRequestForm] =
     useState<GuildRequestFormState>({ type: "closed" });
   const [urgentReportSeen, setUrgentReportSeen] = useState(false);
@@ -797,6 +812,14 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
     return new Map(calendarEvents.map((event) => [event.id, event]));
   }, [calendarEvents]);
 
+  const taskByQuestId = useMemo(() => {
+    const map = new Map<number, AdventurerTask>();
+    for (const task of adventurerTasks) {
+      if (task.questId != null) map.set(task.questId, task);
+    }
+    return map;
+  }, [adventurerTasks]);
+
   const editingCalendarEvent =
     calendarForm.type === "edit"
       ? calendarEventById.get(calendarForm.eventId) ?? null
@@ -990,6 +1013,11 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
   const handleAccept = (questId: number) => {
     const quest = findQuest(questId);
     if (!quest || !selectedPlayer) return;
+    const linkedTask = taskByQuestId.get(quest.id);
+    const shouldAnnounceTransfer =
+      quest.participants.length === 0 &&
+      linkedTask != null &&
+      linkedTask.ownerName !== selectedPlayer;
     void runAction(
       `accept-${questId}`,
       () => acceptQuest(quest, selectedPlayer),
@@ -999,6 +1027,12 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
           `${selectedPlayer} が『${updated.title}』に参加しました！`,
           { icon: selectedMember?.avatar ?? "🧙" },
         );
+        if (shouldAnnounceTransfer) {
+          enqueueGuildMessage(
+            `任務が ${selectedPlayer} に引き継がれました！`,
+            { icon: selectedMember?.avatar ?? "🧙" },
+          );
+        }
       },
     );
   };
@@ -1006,6 +1040,11 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
   const handleBecomeSuccessor = (questId: number) => {
     const quest = findQuest(questId);
     if (!quest || !selectedPlayer) return;
+    const linkedTask = taskByQuestId.get(quest.id);
+    const shouldAnnounceTransfer =
+      quest.participants.length === 0 &&
+      linkedTask != null &&
+      linkedTask.ownerName !== selectedPlayer;
     void runAction(
       `successor-${questId}`,
       () => becomeSuccessor(quest, selectedPlayer),
@@ -1015,6 +1054,12 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
           `${selectedPlayer} が『${updated.title}』に参加しました！`,
           { icon: selectedMember?.avatar ?? "🧙" },
         );
+        if (shouldAnnounceTransfer) {
+          enqueueGuildMessage(
+            `任務が ${selectedPlayer} に引き継がれました！`,
+            { icon: selectedMember?.avatar ?? "🧙" },
+          );
+        }
       },
     );
   };
@@ -1275,6 +1320,75 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
         void reload();
       },
     );
+  };
+
+  const handleDirectQuestPost = (data: DirectQuestPostFormData) => {
+    if (!selectedPlayer || pendingAction) return;
+    setActionError(null);
+    setPendingAction("direct-quest-post");
+    void (async () => {
+      let createdTask: AdventurerTask;
+      try {
+        createdTask = await createAdventurerTask(
+          {
+            title: data.title,
+            description: data.description,
+            priority: data.urgency,
+            importance: data.importance,
+            dueDate: data.dueDate,
+            calendarEventId: data.calendarEventId,
+            isPublic: true,
+          },
+          data.requesterName,
+        );
+      } catch {
+        throw new Error("任務の記録に失敗しました。");
+      }
+
+      try {
+        const { quest } = await delegateTaskToQuest(createdTask, selectedPlayer, {
+          title: data.title,
+          description: data.description,
+          difficulty: data.difficulty,
+          estimatedMinutes: data.estimatedMinutes,
+          dueDate: data.dueDate,
+          dueTime: data.dueTime,
+          requiredMembers: data.requiredMembers,
+        });
+        await insertQuestLog({
+          questId: quest.id,
+          questTitle: quest.title,
+          action: "direct_quest_posted",
+          actorName: selectedPlayer,
+          details: `${selectedPlayer}が『${quest.title}』をギルドへ直掲示しました。`,
+        });
+        return quest;
+      } catch {
+        throw new Error("依頼書の掲示に失敗しました。");
+      }
+    })()
+      .then(() => {
+        setDirectQuestPost({ type: "closed" });
+        enqueueGuildMessage("新しい依頼がギルドに掲示されました！");
+        void reloadTasks();
+        void reload();
+        void reloadCalendar();
+      })
+      .catch((error) => {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "通信魔法に失敗しました。少し時間を置いて再度お試しください。";
+        setActionError(message);
+        enqueueMessage({
+          speaker: "システム",
+          message,
+          icon: "⚙️",
+          tone: "system",
+          durationMs: 3000,
+        });
+      })
+      .finally(() => setPendingAction(null));
   };
 
   const handleCompleteTask = (taskId: number) => {
@@ -1591,11 +1705,15 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
               </button>
               <button
                 type="button"
-                onClick={() => setTaskForm({ type: "create" })}
+                onClick={() =>
+                  nav === "board"
+                    ? setDirectQuestPost({ type: "open" })
+                    : setTaskForm({ type: "create" })
+                }
                 disabled={boardDisabled}
                 className="quest-btn-primary mobile-post-command text-xs px-2.5 py-1.5 disabled:opacity-50"
               >
-                任務
+                {nav === "board" ? "掲示" : "任務"}
               </button>
             </div>
           </div>
@@ -1698,11 +1816,15 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                     </div>
                     <button
                       type="button"
-                      onClick={() => setTaskForm({ type: "create" })}
+                      onClick={() =>
+                        nav === "board"
+                          ? setDirectQuestPost({ type: "open" })
+                          : setTaskForm({ type: "create" })
+                      }
                       disabled={boardDisabled}
                       className="quest-btn-primary hidden lg:inline-flex min-h-10 px-3 text-xs disabled:opacity-50"
                     >
-                      任務を記す
+                      {nav === "board" ? "直接依頼を掲示" : "任務を記す"}
                     </button>
                   </div>
                 </div>
@@ -1891,6 +2013,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                           ? calendarEventById.get(recommendedQuest.linkedEventId) ?? null
                           : null
                       }
+                      linkedTask={taskByQuestId.get(recommendedQuest.id) ?? null}
                       busy={busy}
                       onAccept={handleAccept}
                       onBecomeSuccessor={handleBecomeSuccessor}
@@ -1918,6 +2041,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                             ? calendarEventById.get(quest.linkedEventId) ?? null
                             : null
                         }
+                        linkedTask={taskByQuestId.get(quest.id) ?? null}
                         onAccept={handleAccept}
                         onBecomeSuccessor={handleBecomeSuccessor}
                         onRequestSuccession={handleRequestSuccession}
@@ -2089,6 +2213,16 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
         submitting={busy}
         onClose={() => setQuestPublish({ type: "closed" })}
         onSubmit={handlePublishQuest}
+      />
+
+      <DirectQuestPostModal
+        open={directQuestPost.type === "open"}
+        selectedPlayer={selectedPlayer}
+        staff={staff}
+        calendarEvents={calendarEvents}
+        submitting={busy}
+        onClose={() => setDirectQuestPost({ type: "closed" })}
+        onSubmit={handleDirectQuestPost}
       />
 
       <GuildRequestFormModal
@@ -4066,6 +4200,350 @@ function difficultyFromTask(task: AdventurerTask): QuestDifficulty {
   return 1;
 }
 
+function DirectQuestPostModal({
+  open,
+  selectedPlayer,
+  staff,
+  calendarEvents,
+  submitting,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  selectedPlayer: string;
+  staff: PartyMember[];
+  calendarEvents: CalendarEvent[];
+  submitting: boolean;
+  onClose: () => void;
+  onSubmit: (data: DirectQuestPostFormData) => void;
+}) {
+  const activeStaff = useMemo(
+    () => staff.filter((member) => member.isActive !== false),
+    [staff],
+  );
+  const eventOptions = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return [...calendarEvents]
+      .filter(isGuildWideCalendarEvent)
+      .sort((a, b) => {
+        const aFuture = a.eventDate >= today ? 0 : 1;
+        const bFuture = b.eventDate >= today ? 0 : 1;
+        if (aFuture !== bFuture) return aFuture - bFuture;
+        const date = a.eventDate.localeCompare(b.eventDate);
+        if (date !== 0) return date;
+        return (a.startTime || "99:99").localeCompare(b.startTime || "99:99");
+      });
+  }, [calendarEvents]);
+  const [form, setForm] = useState<DirectQuestPostFormData>({
+    requesterName: selectedPlayer,
+    title: "",
+    description: "",
+    difficulty: 3,
+    urgency: 3,
+    importance: 3,
+    estimatedMinutes: 30,
+    dueDate: toDateInputValue(new Date()),
+    dueTime: "18:00",
+    requiredMembers: 1,
+    calendarEventId: null,
+  });
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const requester =
+      activeStaff.find((member) => member.name === selectedPlayer)?.name ??
+      activeStaff[0]?.name ??
+      selectedPlayer;
+    setForm({
+      requesterName: requester,
+      title: "",
+      description: "",
+      difficulty: 3,
+      urgency: 3,
+      importance: 3,
+      estimatedMinutes: 30,
+      dueDate: toDateInputValue(new Date()),
+      dueTime: "18:00",
+      requiredMembers: 1,
+      calendarEventId: null,
+    });
+    setError(null);
+  }, [activeStaff, open, selectedPlayer]);
+
+  if (!open) return null;
+
+  const update = <K extends keyof DirectQuestPostFormData>(
+    key: K,
+    value: DirectQuestPostFormData[K],
+  ) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+    if (error) setError(null);
+  };
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (submitting) return;
+    if (!form.requesterName.trim()) {
+      setError("依頼者を選択してください");
+      return;
+    }
+    if (!form.title.trim()) {
+      setError("依頼タイトルを入力してください");
+      return;
+    }
+    if (!form.dueDate || !form.dueTime) {
+      setError("納期の日付と時間を入力してください");
+      return;
+    }
+    onSubmit({
+      ...form,
+      requesterName: form.requesterName.trim(),
+      title: form.title.trim(),
+      description: form.description.trim(),
+      urgency: Math.min(5, Math.max(1, form.urgency)),
+      importance: Math.min(5, Math.max(1, form.importance)),
+      requiredMembers: Math.min(3, Math.max(1, form.requiredMembers)),
+    });
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[69] flex items-end justify-center p-0 sm:items-center sm:p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="direct-quest-post-title"
+    >
+      <button
+        type="button"
+        className="modal-backdrop absolute inset-0 bg-black/80"
+        aria-label="依頼直掲示フォームを閉じる"
+        onClick={submitting ? undefined : onClose}
+      />
+      <section className="modal-panel relative rpg-frame max-h-[92dvh] w-full max-w-2xl overflow-y-auto custom-scroll p-5">
+        <header className="border-b-2 border-[var(--color-gold)]/30 pb-3">
+          <p className="font-[family-name:var(--font-display)] text-[10px] tracking-[0.22em] text-[var(--color-gold)]/80">
+            DIRECT REQUEST
+          </p>
+          <h2 id="direct-quest-post-title" className="pixel-window-title mt-1 text-xl font-bold">
+            依頼を直掲示
+          </h2>
+          <p className="mt-1 text-xs text-slate-500">
+            急ぎの依頼を直接掲示します。内部では自動で冒険者手帳の任務も作成されます。
+          </p>
+        </header>
+
+        <form onSubmit={handleSubmit} className="mt-4 grid gap-3">
+          <label>
+            <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">
+              依頼者 *
+            </span>
+            <select
+              value={form.requesterName}
+              onChange={(event) => update("requesterName", event.target.value)}
+              disabled={submitting}
+              className="quest-input mt-1.5"
+            >
+              <option value="">依頼者を選択</option>
+              {activeStaff.map((member) => (
+                <option key={member.id} value={member.name}>
+                  {member.name} Lv.{member.level}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">
+              依頼タイトル *
+            </span>
+            <input
+              value={form.title}
+              onChange={(event) => update("title", event.target.value)}
+              disabled={submitting}
+              className="quest-input mt-1.5"
+              placeholder="例: 景品補充"
+            />
+          </label>
+
+          <label>
+            <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">
+              詳細説明
+            </span>
+            <textarea
+              value={form.description}
+              onChange={(event) => update("description", event.target.value)}
+              disabled={submitting}
+              rows={3}
+              className="quest-input mt-1.5 resize-none"
+              placeholder="依頼内容、作業場所、注意点..."
+            />
+          </label>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <label>
+              <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">
+                Lv
+              </span>
+              <select
+                value={form.difficulty}
+                onChange={(event) =>
+                  update("difficulty", Number(event.target.value) as QuestDifficulty)
+                }
+                disabled={submitting}
+                className="quest-input mt-1.5"
+              >
+                {([1, 2, 3, 4, 5] as QuestDifficulty[]).map((difficulty) => (
+                  <option key={difficulty} value={difficulty}>
+                    Lv {QUEST_DIFFICULTY_LABELS[difficulty]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <TaskScoreInput
+              label="緊急度"
+              value={form.urgency}
+              onChange={(value) => update("urgency", value)}
+              disabled={submitting}
+            />
+            <TaskScoreInput
+              label="重要度"
+              value={form.importance}
+              onChange={(value) => update("importance", value)}
+              disabled={submitting}
+            />
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <label>
+              <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">
+                推定時間
+              </span>
+              <select
+                value={form.estimatedMinutes}
+                onChange={(event) =>
+                  update("estimatedMinutes", Number(event.target.value))
+                }
+                disabled={submitting}
+                className="quest-input mt-1.5"
+              >
+                {DIRECT_POST_ESTIMATED_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">
+                必要人員
+              </span>
+              <select
+                value={form.requiredMembers}
+                onChange={(event) =>
+                  update("requiredMembers", Number(event.target.value))
+                }
+                disabled={submitting}
+                className="quest-input mt-1.5"
+              >
+                {[1, 2, 3].map((count) => (
+                  <option key={count} value={count}>
+                    {count}人
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">
+                関連予定
+              </span>
+              <select
+                value={form.calendarEventId ?? ""}
+                onChange={(event) =>
+                  update(
+                    "calendarEventId",
+                    event.target.value ? Number(event.target.value) : null,
+                  )
+                }
+                disabled={submitting}
+                className="quest-input mt-1.5"
+              >
+                <option value="">関連なし</option>
+                {eventOptions.map((event) => (
+                  <option key={event.id} value={event.id}>
+                    {formatCalendarDate(event.eventDate)} {formatEventTime(event)} [{EVENT_TYPE_LABELS[event.eventType]}] {event.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label>
+              <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">
+                納期日 *
+              </span>
+              <input
+                type="date"
+                value={form.dueDate}
+                onChange={(event) => update("dueDate", event.target.value)}
+                disabled={submitting}
+                className="quest-input mt-1.5"
+              />
+            </label>
+            <label>
+              <span className="quest-pixel-label text-[10px] text-[var(--color-gold)]">
+                納期時間 *
+              </span>
+              <input
+                type="time"
+                value={form.dueTime}
+                onChange={(event) => update("dueTime", event.target.value)}
+                disabled={submitting}
+                className="quest-input mt-1.5"
+              />
+            </label>
+          </div>
+
+          <div className="border-2 border-[var(--color-gold)]/45 bg-black/30 px-3 py-2 text-xs text-slate-400 shadow-[3px_3px_0_#000]">
+            依頼ランク:{" "}
+            <span className="text-[var(--color-gold-bright)] font-bold">
+              {form.urgency * form.importance}
+            </span>
+            <span className="ml-2 text-slate-500">
+              公開任務として記録され、すぐギルド依頼へ掲載されます。
+            </span>
+          </div>
+
+          {error && (
+            <p className="border-2 border-red-400/55 bg-red-500/10 px-3 py-2 text-sm text-red-200 shadow-[3px_3px_0_#000]">
+              {error}
+            </p>
+          )}
+
+          <footer className="grid gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={submitting}
+              className="quest-btn-secondary disabled:opacity-45"
+            >
+              キャンセル
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="quest-btn-primary disabled:opacity-45"
+            >
+              直接依頼を掲示
+            </button>
+          </footer>
+        </form>
+      </section>
+    </div>
+  );
+}
+
 function GuildRequestFormModal({
   open,
   requestType,
@@ -5364,6 +5842,7 @@ function RecommendedQuest({
   selectedPlayer,
   staffByName,
   relatedEvent,
+  linkedTask,
   busy,
   onAccept,
   onBecomeSuccessor,
@@ -5377,6 +5856,7 @@ function RecommendedQuest({
   selectedPlayer: string;
   staffByName: ReadonlyMap<string, PartyMember>;
   relatedEvent?: CalendarEvent | null;
+  linkedTask?: AdventurerTask | null;
   busy: boolean;
   onAccept: (questId: number) => void;
   onBecomeSuccessor: (questId: number) => void;
@@ -5416,6 +5896,7 @@ function RecommendedQuest({
         selectedPlayer={selectedPlayer}
         staffByName={staffByName}
         relatedEvent={relatedEvent}
+        linkedTask={linkedTask}
         onAccept={onAccept}
         onBecomeSuccessor={onBecomeSuccessor}
         onRequestSuccession={onRequestSuccession}
@@ -5508,26 +5989,64 @@ function GuideModal({
   open: boolean;
   onClose: () => void;
 }) {
-  if (!open) return null;
-
+  const [activeIndex, setActiveIndex] = useState(0);
   const items = [
     {
-      title: "まず操作するメンバーを選択",
-      text: "右下の「パーティ」から自分を選ぶと、参加・助っ人募集・討伐完了が自分名義になります。",
+      title: "ギルドクエストとは",
+      text: "ギルドクエストは、日々の作業を“任務”として管理し、必要に応じて仲間へ依頼できる職場用RPGツールです。仕事をただのタスクではなく、ギルドの依頼として楽しく共有できます。",
     },
     {
-      title: "迷ったらおすすめを見る",
-      text: "ボード上部のおすすめは、未受注または助っ人募集の中から優先度が高いものを表示します。",
+      title: "冒険者手帳",
+      text: "冒険者手帳は、自分が持っている任務を記録する場所です。今日やること、今週やること、未来の作業を整理できます。基本的には、まずここに任務を記すところから始めます。",
     },
     {
-      title: "状態で素早く絞り込み",
-      text: "未受注、募集中、助っ人募集、挑戦中、自分の依頼、達成済みを1タップで切り替えられます。",
+      title: "任務を記す",
+      text: "任務には、タイトル、説明、緊急度、重要度、納期、公開設定を登録できます。公開した任務は他の冒険者にも見えるようになります。非公開の任務は本人だけが確認できます。",
     },
     {
-      title: "達成後は遠征へ",
-      text: "討伐完了で遠征チケットを獲得します。PCは左メニュー、スマホは自分タブから遠征に出発できます。",
+      title: "ギルド依頼",
+      text: "自分だけでは対応が難しい任務は、ギルド依頼として掲示できます。掲示された依頼は、手が空いている冒険者が参加できます。",
+    },
+    {
+      title: "依頼を出す2つの方法",
+      text: "依頼の出し方は2つあります。基本は、冒険者手帳に記した任務を“ギルドへ依頼する”方法です。急ぎの場合は、ギルド依頼画面から直接依頼を掲示することもできます。直掲示した依頼も、自動的に任務として記録されます。",
+    },
+    {
+      title: "参加・挑戦・助っ人募集",
+      text: "依頼には必要人員が設定されています。必要人数に達するまでは参加者を募集します。定員に達すると挑戦中になります。挑戦者が助っ人募集を出すと、助っ人募集欄に表示され、他の冒険者が継承・参加できます。",
+    },
+    {
+      title: "ギルド暦",
+      text: "ギルド暦では、全体の予定と選択中の冒険者の任務を確認できます。予定は新商品発売、棚卸し、MTGなど全員が知るべき情報です。任務は個人の作業であり、公開設定によって表示範囲が変わります。",
+    },
+    {
+      title: "ギルド速報",
+      text: "ギルド速報には、期限が近い任務、届いた依頼、助言、ギルド指令、重要な予定などが表示されます。見落としを防ぐためのお知らせ欄です。",
+    },
+    {
+      title: "自分の依頼",
+      text: "自分の依頼では、自分が参加している依頼や挑戦中の依頼を確認できます。まずはここで、自分が今やるべき依頼を確認してください。",
+    },
+    {
+      title: "遠征",
+      text: "遠征は放置型の育成要素です。依頼を達成すると遠征チケットを獲得できます。遠征に出すと、時間経過後にEXPやGOLDなどの報酬を受け取れます。",
+    },
+    {
+      title: "冒険者パーティ",
+      text: "冒険者パーティでは、登録されているメンバーを確認できます。右側のパーティ欄で選択した冒険者に応じて、本日の任務やギルド暦の表示内容が変わります。",
+    },
+    {
+      title: "EXP・Lv・報酬",
+      text: "依頼を達成するとEXPを獲得し、Lvが上がります。達成や遠征を通じて、自分の冒険者を育てることができます。",
+    },
+    {
+      title: "基本のおすすめ運用",
+      text: "まずは冒険者手帳に任務を記します。自分でできるものは自分で進め、誰かに手伝ってほしいものはギルド依頼へ掲示します。完了したら討伐完了として記録し、報酬を受け取りましょう。",
     },
   ];
+  const activeItem = items[activeIndex] ?? items[0];
+
+  if (!open) return null;
 
   return (
     <div
@@ -5542,32 +6061,67 @@ function GuideModal({
         aria-label="初回ガイドを閉じる"
         onClick={onClose}
       />
-      <div className="modal-panel relative rpg-frame w-full max-w-md p-5">
+      <div className="modal-panel relative rpg-frame max-h-[calc(100dvh-32px)] w-full max-w-4xl overflow-y-auto custom-scroll p-5 pb-[calc(env(safe-area-inset-bottom)+20px)]">
         <p className="font-[family-name:var(--font-display)] text-[10px] tracking-[0.22em] text-[var(--color-gold)]/80">
-          QUICK START
+          GUILD GUIDE
         </p>
         <h2 id="guide-title" className="pixel-window-title mt-1 text-xl font-bold">
-          初回ガイド
+          ギルドクエストの使い方
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-slate-400">
-          毎日の作業をクエストとして扱うための、最小限の使い方です。
+          冒険者手帳、ギルド依頼、ギルド暦、遠征までの基本運用をまとめています。
         </p>
-        <div className="mt-4 space-y-3">
+
+        <div className="mt-4 hidden min-h-0 grid-cols-[15rem_minmax(0,1fr)] gap-3 md:grid">
+          <nav className="max-h-[58dvh] overflow-y-auto custom-scroll pr-1">
+            <div className="grid gap-1">
+              {items.map((item, index) => (
+                <button
+                  key={item.title}
+                  type="button"
+                  onClick={() => setActiveIndex(index)}
+                  className={`pixel-menu-button min-h-10 px-2 py-2 text-left text-xs ${
+                    index === activeIndex ? "is-selected" : ""
+                  }`}
+                >
+                  <span className="mr-2 text-[var(--color-gold-bright)]">
+                    {index + 1}
+                  </span>
+                  {item.title}
+                </button>
+              ))}
+            </div>
+          </nav>
+          <section className="min-h-[18rem] border-2 border-white/20 bg-black/22 p-4 shadow-[3px_3px_0_#000]">
+            <p className="font-[family-name:var(--font-display)] text-[10px] tracking-[0.2em] text-[var(--color-gold)]/70">
+              GUIDE {activeIndex + 1}
+            </p>
+            <h3 className="mt-2 text-lg font-semibold text-[var(--color-gold-bright)]">
+              {activeItem.title}
+            </h3>
+            <p className="mt-3 text-sm leading-7 text-slate-300">
+              {activeItem.text}
+            </p>
+          </section>
+        </div>
+
+        <div className="mt-4 space-y-2 md:hidden">
           {items.map((item, index) => (
-            <section
+            <details
               key={item.title}
-              className="border-2 border-white/20 bg-black/22 p-3 shadow-[3px_3px_0_#000]"
+              className="border-2 border-white/20 bg-black/22 p-3 shadow-[2px_2px_0_#000]"
+              open={index === 0}
             >
-              <h3 className="text-sm font-semibold text-slate-100">
+              <summary className="cursor-pointer text-sm font-semibold text-slate-100">
                 <span className="mr-2 text-[var(--color-gold-bright)]">
                   {index + 1}
                 </span>
                 {item.title}
-              </h3>
-              <p className="mt-1 text-xs leading-relaxed text-slate-500">
+              </summary>
+              <p className="mt-2 text-xs leading-6 text-slate-400">
                 {item.text}
               </p>
-            </section>
+            </details>
           ))}
         </div>
         <button
@@ -5575,7 +6129,7 @@ function GuideModal({
           onClick={onClose}
           className="quest-btn-primary mt-5 w-full"
         >
-          はじめる
+          閉じる
         </button>
       </div>
     </div>

@@ -22,6 +22,7 @@ import { awardPlayerExp } from "./staffApi";
 export interface AdventurerTaskRow {
   id: number;
   owner_name: string;
+  original_owner_name: string | null;
   title: string;
   description: string | null;
   status: string;
@@ -46,6 +47,7 @@ export function rowToAdventurerTask(row: AdventurerTaskRow): AdventurerTask {
   return {
     id: row.id,
     ownerName: row.owner_name,
+    originalOwnerName: row.original_owner_name ?? row.owner_name,
     title: row.title,
     description: row.description ?? "",
     status: parseTaskStatus(row.status),
@@ -108,6 +110,7 @@ export async function updateAdventurerTask(
         form.calendarEventId,
         task.status,
         task.questId,
+        task.originalOwnerName,
       ),
     )
     .eq("id", task.id)
@@ -233,6 +236,7 @@ export async function delegateTaskToQuest(
       status: "delegated",
       is_public: true,
       quest_id: quest.id,
+      original_owner_name: task.originalOwnerName || task.ownerName,
       calendar_event_id: linkedEventId,
       due_date: form.dueDate,
       updated_at: new Date().toISOString(),
@@ -283,6 +287,52 @@ export async function completeTaskLinkedToQuest(
   return updated;
 }
 
+export async function transferTaskToQuestParticipant(
+  quest: Pick<Quest, "id" | "title">,
+  challengerName: string,
+): Promise<AdventurerTask | null> {
+  const { data, error } = await requireSupabase()
+    .from("adventurer_tasks")
+    .select("*")
+    .eq("quest_id", quest.id)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return null;
+
+  const task = rowToAdventurerTask(data as AdventurerTaskRow);
+  if (task.status === "completed") return task;
+
+  const originalOwnerName = task.originalOwnerName || task.ownerName;
+  const ownerChanged = task.ownerName !== challengerName;
+  const { data: updatedData, error: updateError } = await requireSupabase()
+    .from("adventurer_tasks")
+    .update({
+      owner_name: challengerName,
+      original_owner_name: originalOwnerName,
+      status: "in_progress",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", task.id)
+    .select("*")
+    .single();
+
+  if (updateError) throw updateError;
+  const updated = rowToAdventurerTask(updatedData as AdventurerTaskRow);
+
+  if (ownerChanged) {
+    await insertQuestLog({
+      questId: quest.id,
+      questTitle: task.title,
+      action: "task_transferred",
+      actorName: challengerName,
+      details: `『${task.title}』の担当が ${task.ownerName} から ${challengerName} へ移りました。`,
+    });
+  }
+
+  return updated;
+}
+
 async function fetchQuestById(questId: number): Promise<Quest> {
   const { data, error } = await requireSupabase()
     .from("quests")
@@ -322,9 +372,11 @@ function toTaskPayload(
   calendarEventId: number | null,
   status: AdventurerTaskStatus,
   questId?: number | null,
+  originalOwnerName?: string,
 ) {
   return {
     owner_name: ownerName,
+    original_owner_name: originalOwnerName ?? ownerName,
     title: form.title.trim(),
     description: form.description.trim() || null,
     status,
