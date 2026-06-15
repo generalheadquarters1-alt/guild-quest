@@ -11,6 +11,16 @@ const EMPTY_RESOURCES: PlayerResources = {
   expeditionTickets: 0,
   gold: 0,
   items: {},
+  morale: 70,
+  fatigue: 0,
+  proficiency: 0,
+  trust: 0,
+  equipmentKey: "wooden_sword",
+  equipmentDurability: 100,
+  jobClass: "novice",
+  lastTrainedAt: null,
+  totalExpeditionSuccess: 0,
+  totalExpeditionFailure: 0,
 };
 
 export function useExpeditions(playerName: string) {

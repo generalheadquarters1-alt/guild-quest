@@ -11,6 +11,8 @@ export type QuestLogAction =
   | "reopened"
   | "expedition_started"
   | "expedition_claimed"
+  | "expedition_success"
+  | "expedition_failure"
   | "calendar_event_created"
   | "calendar_event_updated"
   | "calendar_event_deleted"
@@ -25,6 +27,10 @@ export type QuestLogAction =
   | "guild_assignment_sent"
   | "guild_directive_issued"
   | "direct_quest_posted"
+  | "train_proficiency"
+  | "rest_tavern"
+  | "guild_meeting"
+  | "maintain_equipment"
   | "guild_request_accepted"
   | "guild_request_rejected";
 
@@ -100,6 +106,8 @@ export const LOG_ACTION_LABELS: Record<QuestLogAction, string> = {
   reopened: "クエストを再掲",
   expedition_started: "遠征へ出発",
   expedition_claimed: "遠征から帰還",
+  expedition_success: "遠征成功",
+  expedition_failure: "遠征失敗",
   calendar_event_created: "ギルド暦に追加",
   calendar_event_updated: "ギルド暦を更新",
   calendar_event_deleted: "ギルド暦から削除",
@@ -114,6 +122,10 @@ export const LOG_ACTION_LABELS: Record<QuestLogAction, string> = {
   guild_assignment_sent: "指名依頼を送信",
   guild_directive_issued: "ギルド指令を発令",
   direct_quest_posted: "依頼を直掲示",
+  train_proficiency: "訓練",
+  rest_tavern: "酒場で休息",
+  guild_meeting: "ギルド集会",
+  maintain_equipment: "装備整備",
   guild_request_accepted: "提案を承認",
   guild_request_rejected: "提案を却下",
 };

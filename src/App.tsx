@@ -21,13 +21,19 @@ import { ReopenQuestModal } from "./components/ReopenQuestModal";
 import { Sidebar } from "./components/Sidebar";
 import {
   EXPEDITION_DESTINATIONS,
+  GROWTH_ACTION_LABELS,
+  calculateExpeditionSuccessRate,
   formatRemainingTime,
+  formatRewardMaterialTable,
   formatRewardItems,
   getCurrentExpedition,
+  getEquipment,
   getExpeditionTicketsForRank as getTicketsForRank,
+  getJobClass,
   isExpeditionReady,
   type Expedition,
   type ExpeditionDestination,
+  type GrowthAction,
   type PlayerResources,
 } from "./data/expeditions";
 import {
@@ -99,6 +105,7 @@ import { useStaff } from "./hooks/useStaff";
 import {
   claimExpeditionReward,
   ExpeditionError,
+  performGrowthAction,
   startExpedition,
 } from "./lib/expeditionApi";
 import {
@@ -1134,7 +1141,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
 
     setActionError(null);
     setPendingAction(`expedition-start-${destination.key}`);
-    void startExpedition(selectedPlayer, destination)
+    void startExpedition(selectedPlayer, destination, selectedMember?.level ?? 1)
       .then((expedition) => {
         enqueueGuildMessage(
           `${selectedPlayer} は『${expedition.expeditionName}』へ出発しました！`,
@@ -1163,38 +1170,50 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
     if (!selectedPlayer || pendingAction) return;
 
     const previousLevel = selectedMember?.level ?? 1;
-    const nextLevel =
-      Math.floor(((selectedMember?.exp ?? 0) + expedition.rewardExp) / 100) + 1;
-    const itemLines = formatRewardItems(expedition.rewardItems);
 
     setActionError(null);
     setPendingAction(`expedition-claim-${expedition.id}`);
     void claimExpeditionReward(expedition, selectedPlayer)
-      .then(() => {
-        enqueueGuildMessage(`${selectedPlayer} が遠征から帰還しました！`, {
-          durationMs: 1900,
-        });
+      .then(({ expedition: claimedExpedition }) => {
+        const nextLevel =
+          Math.floor(
+            ((selectedMember?.exp ?? 0) + claimedExpedition.rewardExp) / 100,
+          ) + 1;
+        const itemLines = formatRewardItems(claimedExpedition.rewardMaterials);
+        const success = claimedExpedition.result === "success";
+        enqueueGuildMessage(
+          success
+            ? `${selectedPlayer} が遠征に成功しました！`
+            : `${selectedPlayer} は遠征から撤退しました。`,
+          { durationMs: 1900 },
+        );
         enqueueMessage({
-          speaker: "報酬",
-          message: "遠征から帰還しました！",
-          icon: "🎁",
+          speaker: success ? "遠征成功" : "遠征失敗",
+          message: success
+            ? `${claimedExpedition.expeditionName}を探索した！`
+            : `${claimedExpedition.expeditionName}から撤退した……`,
+          icon: success ? "🎁" : "⚠️",
           tone: "reward",
           avatarType:
             selectedMember?.avatarType ?? loadSelectedAvatar(DEFAULT_AVATAR_TYPE),
           lines: [
-            `EXP +${expedition.rewardExp}`,
-            `GOLD +${expedition.rewardGold}`,
-            `ギルドEXP +${expedition.rewardGuildExp}`,
+            `成功率 ${claimedExpedition.successRate ?? "-"}%`,
+            `EXP +${claimedExpedition.rewardExp}`,
+            `GOLD +${claimedExpedition.rewardGold}`,
+            claimedExpedition.rewardGuildExp > 0
+              ? `ギルドEXP +${claimedExpedition.rewardGuildExp}`
+              : "",
+            success ? "熟練度 +5" : "疲労 +10",
             ...itemLines,
-          ],
-          durationMs: 3400,
+          ].filter(Boolean),
+          durationMs: 3600,
         });
         if (nextLevel > previousLevel) {
           enqueueGuildMessage(`${selectedPlayer} は Lv.${nextLevel} に上がりました！`, {
             durationMs: 2600,
           });
         }
-        addToast("報酬を受け取りました。");
+        addToast(success ? "遠征に成功しました。" : "遠征は失敗しましたが、経験を得ました。");
         void reloadStaff();
         void reloadExpeditions();
       })
@@ -1203,6 +1222,40 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
           e instanceof ExpeditionError
             ? e.message
             : "通信魔法に失敗しました。少し時間を置いて再度お試しください。";
+        setActionError(message);
+        enqueueMessage({
+          speaker: "システム",
+          message,
+          icon: "⚙️",
+          tone: "system",
+          durationMs: 2800,
+        });
+      })
+      .finally(() => setPendingAction(null));
+  };
+
+  const handleGrowthAction = (action: GrowthAction) => {
+    if (!selectedPlayer || pendingAction) return;
+
+    setActionError(null);
+    setPendingAction(`growth-${action}`);
+    void performGrowthAction(selectedPlayer, action)
+      .then(() => {
+        const message =
+          action === "train_proficiency"
+            ? "訓練を行いました。熟練度が上がりました！"
+            : action === "rest_tavern"
+              ? "酒場で休息しました。疲労が回復しました！"
+              : action === "guild_meeting"
+                ? "ギルド集会に参加しました。信頼度が上がりました！"
+                : "装備を整備しました。耐久が回復しました！";
+        enqueueGuildMessage(message, { durationMs: 2300 });
+        addToast(GROWTH_ACTION_LABELS[action]);
+        void reloadExpeditions();
+      })
+      .catch(() => {
+        const message =
+          "通信魔法に失敗しました。少し時間を置いて再度お試しください。";
         setActionError(message);
         enqueueMessage({
           speaker: "システム",
@@ -1902,6 +1955,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
               />
             ) : nav === "expedition" ? (
               <ExpeditionPanel
+                selectedMember={selectedMember}
                 resources={resources}
                 expeditions={expeditions}
                 currentExpedition={currentExpedition}
@@ -1910,6 +1964,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                 busy={busy || !isOnline}
                 onStart={handleStartExpedition}
                 onClaim={handleClaimExpedition}
+                onGrowthAction={handleGrowthAction}
               />
             ) : nav === "settings" ? (
               <SettingsScreen
@@ -1981,6 +2036,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                         onOpenNotebook={() => navigateTo("notebook")}
                       />
                       <ExpeditionPanel
+                        selectedMember={selectedMember}
                         resources={resources}
                         expeditions={expeditions}
                         currentExpedition={currentExpedition}
@@ -1989,6 +2045,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                         busy={busy || !isOnline}
                         onStart={handleStartExpedition}
                         onClaim={handleClaimExpedition}
+                        onGrowthAction={handleGrowthAction}
                         compact
                       />
                     </>
@@ -2064,6 +2121,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                         onOpenNotebook={() => navigateTo("notebook")}
                       />
                       <ExpeditionPanel
+                        selectedMember={selectedMember}
                         resources={resources}
                         expeditions={expeditions}
                         currentExpedition={currentExpedition}
@@ -2072,6 +2130,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                         busy={busy || !isOnline}
                         onStart={handleStartExpedition}
                         onClaim={handleClaimExpedition}
+                        onGrowthAction={handleGrowthAction}
                         compact
                       />
                     </>
@@ -6801,6 +6860,7 @@ function getRelatedTasksForEvent(
 }
 
 function ExpeditionPanel({
+  selectedMember,
   resources,
   expeditions,
   currentExpedition,
@@ -6810,7 +6870,9 @@ function ExpeditionPanel({
   compact = false,
   onStart,
   onClaim,
+  onGrowthAction,
 }: {
+  selectedMember: PartyMember | null;
   resources: PlayerResources;
   expeditions: Expedition[];
   currentExpedition: Expedition | null;
@@ -6820,6 +6882,7 @@ function ExpeditionPanel({
   compact?: boolean;
   onStart: (destination: ExpeditionDestination) => void;
   onClaim: (expedition: Expedition) => void;
+  onGrowthAction: (action: GrowthAction) => void;
 }) {
   const ready = currentExpedition
     ? isExpeditionReady(currentExpedition, now)
@@ -6829,6 +6892,7 @@ function ExpeditionPanel({
     : 0;
   const claimedHistory = expeditions.filter((expedition) => expedition.status === "claimed");
   const itemEntries = Object.entries(resources.items).filter(([, amount]) => amount > 0);
+  const playerLevel = selectedMember?.level ?? 1;
 
   if (loading) {
     return (
@@ -6875,6 +6939,13 @@ function ExpeditionPanel({
             </div>
           </div>
         </header>
+
+        <GrowthStatusPanel
+          selectedMember={selectedMember}
+          resources={resources}
+          busy={busy}
+          onGrowthAction={onGrowthAction}
+        />
 
         <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(12rem,0.45fr)]">
           <div className="expedition-current-window border-2 border-white/15 bg-black/25 p-3 shadow-[3px_3px_0_#000]">
@@ -6931,12 +7002,33 @@ function ExpeditionPanel({
       <section className="grid gap-2 lg:grid-cols-3">
         {EXPEDITION_DESTINATIONS.map((destination) => {
           const shortage = resources.expeditionTickets < destination.ticketCost;
-          const disabled = busy || currentExpedition != null || shortage;
+          const successBreakdown = calculateExpeditionSuccessRate(
+            destination,
+            resources,
+            playerLevel,
+          );
+          const trustBlocked = resources.trust < destination.requiredTrust;
+          const fatigueBlocked = resources.fatigue >= 90;
+          const equipmentBlocked = resources.equipmentDurability <= 5;
+          const blockedReason = fatigueBlocked
+            ? "疲労限界"
+            : equipmentBlocked
+              ? "装備整備が必要"
+              : trustBlocked
+                ? "信頼度不足"
+                : "";
+          const disabled =
+            busy ||
+            currentExpedition != null ||
+            shortage ||
+            trustBlocked ||
+            fatigueBlocked ||
+            equipmentBlocked;
           const rewardLines = [
-            `EXP +${destination.rewardExp}`,
-            `GOLD +${destination.rewardGold}`,
-            `ギルドEXP +${destination.rewardGuildExp}`,
-            destination.rareItem ? `${destination.rareItem.name} 入手の可能性` : "",
+            `成功 EXP +${destination.rewardExp} / GOLD +${destination.rewardGold}`,
+            `失敗 EXP +${destination.failureRewardExp} / GOLD +${destination.failureRewardGold}`,
+            ...formatRewardMaterialTable(destination.rewardMaterials),
+            destination.rareMaterial ? `${destination.rareMaterial.name} 入手の可能性` : "",
           ].filter(Boolean);
 
           return (
@@ -6964,7 +7056,14 @@ function ExpeditionPanel({
                 <span className="pixel-chip px-2 py-1 text-[var(--color-gold-bright)]">
                   チケット {destination.ticketCost}
                 </span>
+                <span className="pixel-chip px-2 py-1 text-[var(--color-xp)]">
+                  成功率 {successBreakdown.total}%
+                </span>
+                <span className="pixel-chip px-2 py-1 text-slate-300">
+                  信頼 {resources.trust}/{destination.requiredTrust}
+                </span>
               </div>
+              <SuccessRateBreakdownList breakdown={successBreakdown} />
               <div className="mt-3 grid gap-1 text-[11px] text-slate-300">
                 {rewardLines.map((line) => (
                   <span key={line} className="reward-row">
@@ -6982,7 +7081,7 @@ function ExpeditionPanel({
                   ? "遠征中"
                   : shortage
                     ? "チケット不足"
-                    : "出発"}
+                    : blockedReason || "出発"}
               </button>
             </article>
           );
@@ -7000,7 +7099,13 @@ function ExpeditionPanel({
                 key={expedition.id}
                 className="border-2 border-white/15 bg-black/20 px-2 py-2 text-xs text-slate-400 shadow-[2px_2px_0_#000]"
               >
-                {expedition.expeditionName} / EXP +{expedition.rewardExp} / GOLD +{expedition.rewardGold}
+                {expedition.result === "success"
+                  ? "成功"
+                  : expedition.result === "failure"
+                    ? "失敗"
+                    : "帰還"}{" "}
+                / {expedition.expeditionName} / EXP +{expedition.rewardExp} /
+                GOLD +{expedition.rewardGold}
               </p>
             ))}
           </div>
@@ -7008,6 +7113,167 @@ function ExpeditionPanel({
       )}
     </div>
   );
+}
+
+function GrowthStatusPanel({
+  selectedMember,
+  resources,
+  busy,
+  onGrowthAction,
+}: {
+  selectedMember: PartyMember | null;
+  resources: PlayerResources;
+  busy: boolean;
+  onGrowthAction: (action: GrowthAction) => void;
+}) {
+  const equipment = getEquipment(resources.equipmentKey);
+  const job = getJobClass(resources.jobClass);
+  const expProgress = selectedMember ? selectedMember.exp % 100 : 0;
+  const actions: GrowthAction[] = [
+    "train_proficiency",
+    "rest_tavern",
+    "guild_meeting",
+    "maintain_equipment",
+  ];
+
+  return (
+    <section className="mb-3 border-2 border-[var(--color-gold)]/35 bg-black/25 p-3 shadow-[3px_3px_0_#000]">
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+        <div className="flex min-w-0 items-center gap-3">
+          {selectedMember ? (
+            <AvatarSprite
+              avatarType={selectedMember.avatarType}
+              frame={selectedMember.avatarFrame}
+              size="md"
+            />
+          ) : (
+            <div className="h-14 w-14 border-2 border-white/20 bg-black/30" />
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="quest-pixel-label text-[10px] text-[var(--color-gold)]">
+              冒険者育成
+            </p>
+            <h4 className="pixel-title truncate text-base text-slate-100">
+              {(selectedMember?.name ?? resources.playerName) || "冒険者"}
+            </h4>
+            <p className="mt-1 text-xs text-slate-400">
+              Lv.{selectedMember?.level ?? 1} / {job.label} / {equipment.label}
+            </p>
+            <div className="mt-2 h-2 border border-white/20 bg-black/45">
+              <div
+                className="h-full bg-[var(--color-xp)]"
+                style={{ width: `${expProgress}%` }}
+              />
+            </div>
+            <p className="mt-1 text-[10px] text-slate-500">
+              EXP {selectedMember?.exp ?? 0} / 次Lvまで {100 - expProgress}
+            </p>
+          </div>
+        </div>
+
+        <div className="grid gap-2">
+          <div className="grid gap-1.5 sm:grid-cols-2">
+            <GrowthGauge label="士気" value={resources.morale} tone="gold" />
+            <GrowthGauge label="疲労" value={resources.fatigue} tone="red" />
+            <GrowthGauge label="熟練" value={resources.proficiency} tone="blue" />
+            <GrowthGauge label="信頼" value={resources.trust} tone="green" />
+            <GrowthGauge
+              label="耐久"
+              value={resources.equipmentDurability}
+              tone="gold"
+            />
+            <div className="pixel-chip px-2 py-1 text-[10px] text-slate-300">
+              成功 {resources.totalExpeditionSuccess} / 失敗{" "}
+              {resources.totalExpeditionFailure}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {actions.map((action) => (
+              <button
+                key={action}
+                type="button"
+                onClick={() => onGrowthAction(action)}
+                disabled={busy}
+                className="quest-btn-secondary min-h-10 px-2 text-[10px] disabled:opacity-45"
+              >
+                {GROWTH_ACTION_LABELS[action]}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function GrowthGauge({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone: "gold" | "red" | "blue" | "green";
+}) {
+  const filled = Math.round(clampGaugeValue(value) / 20);
+  const color =
+    tone === "red"
+      ? "text-red-300"
+      : tone === "blue"
+        ? "text-sky-300"
+        : tone === "green"
+          ? "text-emerald-300"
+          : "text-[var(--color-gold-bright)]";
+
+  return (
+    <div className="pixel-chip flex items-center justify-between gap-2 px-2 py-1 text-[10px]">
+      <span className="shrink-0 text-slate-400">{label}</span>
+      <span className={`font-bold ${color}`} aria-label={`${label} ${value}`}>
+        {Array.from({ length: 5 }, (_, index) =>
+          index < filled ? "◆" : "◇",
+        ).join("")}
+      </span>
+      <span className="w-6 text-right text-slate-500">{value}</span>
+    </div>
+  );
+}
+
+function SuccessRateBreakdownList({
+  breakdown,
+}: {
+  breakdown: ReturnType<typeof calculateExpeditionSuccessRate>;
+}) {
+  const rows = [
+    `基礎 ${breakdown.base}%`,
+    `Lv +${breakdown.levelBonus}`,
+    `士気 ${formatSigned(breakdown.moraleBonus)}`,
+    `熟練 +${breakdown.proficiencyBonus}`,
+    `装備 +${breakdown.equipmentBonus}`,
+    `職業 +${breakdown.jobBonus}`,
+    `疲労 -${breakdown.fatiguePenalty}`,
+    breakdown.durabilityPenalty > 0
+      ? `耐久 -${breakdown.durabilityPenalty}`
+      : "",
+  ].filter(Boolean);
+
+  return (
+    <div className="mt-2 flex flex-wrap gap-1 text-[9px] text-slate-500">
+      {rows.map((row) => (
+        <span key={row} className="border border-white/10 bg-black/25 px-1.5 py-0.5">
+          {row}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function formatSigned(value: number) {
+  return value >= 0 ? `+${value}` : `${value}`;
+}
+
+function clampGaugeValue(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(100, Math.max(0, Math.round(value)));
 }
 
 function GuildOverview({
