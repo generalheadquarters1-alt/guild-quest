@@ -183,7 +183,7 @@ export async function requestSuccession(
   return updated;
 }
 
-export async function completeQuest(
+export async function completeQuestAndTask(
   quest: Quest,
   actorName: string,
 ): Promise<Quest> {
@@ -211,14 +211,17 @@ export async function completeQuest(
   await insertQuestLog({
     questId: updated.id,
     questTitle: updated.title,
-    action: "completed",
+    action: "quest_completed_task_completed",
     actorName,
+    details: `『${updated.title}』が討伐完了し、関連任務も完了しました。`,
   });
 
   await completeTaskLinkedToQuest(updated.id, actorName);
 
   return updated;
 }
+
+export const completeQuest = completeQuestAndTask;
 
 export async function reopenQuest(
   quest: Quest,

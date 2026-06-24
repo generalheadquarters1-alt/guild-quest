@@ -129,8 +129,8 @@ export function Sidebar({
     {
       key: "guide",
       icon: "?",
-      label: "初回ガイド",
-      sub: "HELP",
+      label: "チュートリアル",
+      sub: "REPLAY",
       selected: false,
       onSelect: onOpenGuide,
     },
@@ -153,6 +153,7 @@ export function Sidebar({
             key={item.key}
             type="button"
             onClick={item.onSelect}
+            data-tutorial={`nav-${item.key}`}
             className={`group pixel-menu-button flex min-h-10 w-full cursor-pointer items-center gap-2 px-2 py-2 text-left transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-gold-bright)] ${
               item.selected ? "is-selected" : ""
             }`}

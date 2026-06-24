@@ -275,20 +275,22 @@ export async function completeTaskLinkedToQuest(
   const task = rowToAdventurerTask(data as AdventurerTaskRow);
   if (task.status === "completed") return task;
 
-  const updated = await updateTaskStatus(task.id, "completed", questId);
-  await insertQuestLog({
-    questId,
-    questTitle: task.title,
-    action: "task_completed",
-    actorName,
-    details: "親任務を自動完了しました。",
-  });
-
-  return updated;
+  void actorName;
+  return updateTaskStatus(task.id, "completed", questId);
 }
 
-export async function transferTaskToQuestParticipant(
-  quest: Pick<Quest, "id" | "title">,
+export async function syncQuestTaskToParticipant(
+  quest: Pick<
+    Quest,
+    | "id"
+    | "title"
+    | "description"
+    | "requester"
+    | "urgency"
+    | "importance"
+    | "dueAt"
+    | "linkedEventId"
+  >,
   challengerName: string,
 ): Promise<AdventurerTask | null> {
   const { data, error } = await requireSupabase()
@@ -298,13 +300,44 @@ export async function transferTaskToQuestParticipant(
     .maybeSingle();
 
   if (error) throw error;
-  if (!data) return null;
+  if (!data) {
+    const { data: insertedData, error: insertError } = await requireSupabase()
+      .from("adventurer_tasks")
+      .insert({
+        owner_name: challengerName,
+        original_owner_name: quest.requester || challengerName,
+        title: quest.title,
+        description: quest.description?.trim() || null,
+        status: "in_progress",
+        priority: clampScore(quest.urgency),
+        importance: clampScore(quest.importance),
+        due_date: questDueDate(quest.dueAt),
+        calendar_event_id: quest.linkedEventId ?? null,
+        is_public: true,
+        quest_id: quest.id,
+        updated_at: new Date().toISOString(),
+      })
+      .select("*")
+      .single();
+
+    if (insertError) throw insertError;
+    const inserted = rowToAdventurerTask(insertedData as AdventurerTaskRow);
+    await insertQuestLog({
+      questId: quest.id,
+      questTitle: quest.title,
+      action: "quest_accepted_task_assigned",
+      actorName: challengerName,
+      details: `『${quest.title}』が ${challengerName} の冒険者手帳に追加されました。`,
+    });
+    return inserted;
+  }
 
   const task = rowToAdventurerTask(data as AdventurerTaskRow);
   if (task.status === "completed") return task;
 
   const originalOwnerName = task.originalOwnerName || task.ownerName;
   const ownerChanged = task.ownerName !== challengerName;
+  const statusChanged = task.status !== "in_progress";
   const { data: updatedData, error: updateError } = await requireSupabase()
     .from("adventurer_tasks")
     .update({
@@ -320,18 +353,20 @@ export async function transferTaskToQuestParticipant(
   if (updateError) throw updateError;
   const updated = rowToAdventurerTask(updatedData as AdventurerTaskRow);
 
-  if (ownerChanged) {
+  if (ownerChanged || statusChanged) {
     await insertQuestLog({
       questId: quest.id,
       questTitle: task.title,
-      action: "task_transferred",
+      action: "quest_accepted_task_assigned",
       actorName: challengerName,
-      details: `『${task.title}』の担当が ${task.ownerName} から ${challengerName} へ移りました。`,
+      details: `『${task.title}』が ${challengerName} の冒険者手帳に追加されました。`,
     });
   }
 
   return updated;
 }
+
+export const transferTaskToQuestParticipant = syncQuestTaskToParticipant;
 
 async function fetchQuestById(questId: number): Promise<Quest> {
   const { data, error } = await requireSupabase()
@@ -427,6 +462,16 @@ function toDueIso(date: string, time: string) {
   const parsed = new Date(`${date}T${timeValue}`);
   if (Number.isNaN(parsed.getTime())) return null;
   return parsed.toISOString();
+}
+
+function questDueDate(dueAt: string | null | undefined) {
+  if (!dueAt) return null;
+  const parsed = new Date(dueAt);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const year = parsed.getFullYear();
+  const month = `${parsed.getMonth() + 1}`.padStart(2, "0");
+  const day = `${parsed.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function formatEstimatedLabel(minutes: number) {

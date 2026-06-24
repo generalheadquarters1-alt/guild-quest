@@ -141,7 +141,7 @@ import {
 import {
   acceptQuest,
   becomeSuccessor,
-  completeQuest,
+  completeQuestAndTask,
   deleteQuestRecord,
   editQuestFields,
   reopenQuest,
@@ -197,6 +197,8 @@ type CompletionReward = {
   tickets?: number;
 };
 const GUIDE_STORAGE_KEY = "todo-quest-guide-seen";
+const TUTORIAL_STORAGE_KEY = "guild_quest_tutorial_completed";
+const JOIN_MESSAGE_STORAGE_KEY = "guild_quest_join_message";
 const GUILD_ACCESS_KEY = "guild_quest_access_granted";
 const LEGACY_GUILD_ACCESS_KEY = "guild-quest-access";
 const GUILD_CODE = import.meta.env.VITE_GUILD_CODE?.trim() ?? "";
@@ -251,6 +253,119 @@ type CalendarDetailState =
   | { type: "closed" }
   | { type: "open"; eventId: number };
 
+type TutorialStep = {
+  id: string;
+  title: string;
+  message: string;
+  target?: string;
+  nav?: NavId;
+  mobilePanel?: MobilePanel;
+};
+
+const TUTORIAL_STEPS: TutorialStep[] = [
+  {
+    id: "join",
+    title: "ギルド加入",
+    message: "冒険者 {playerName} が誕生した！これよりギルドの一員として、日々の任務へ挑みます。",
+  },
+  {
+    id: "notebook",
+    title: "冒険者手帳",
+    message: "ここが冒険者手帳です。自分の任務を記録します。まずは任務を1つ作ってみましょう。",
+    target: "notebook",
+    nav: "notebook",
+    mobilePanel: "quests",
+  },
+  {
+    id: "task-create",
+    title: "任務作成",
+    message: "任務には、タイトル、納期、緊急度、重要度を設定できます。練習として任務作成画面を開いています。",
+    target: "task-form",
+    nav: "notebook",
+    mobilePanel: "quests",
+  },
+  {
+    id: "board",
+    title: "ギルド依頼",
+    message: "一人では難しい任務は、ギルド依頼として仲間へ共有できます。ここに依頼書が掲示されます。",
+    target: "nav-board",
+    nav: "board",
+    mobilePanel: "quests",
+  },
+  {
+    id: "delegate",
+    title: "依頼化",
+    message: "任務カードの「任務を依頼書化」で、手帳の任務をギルド依頼へ変換できます。依頼化すると、受注されるまで依頼中として手帳に残ります。",
+    target: "task-delegate",
+    nav: "notebook",
+    mobilePanel: "quests",
+  },
+  {
+    id: "calendar",
+    title: "ギルド暦",
+    message: "ギルド暦では、全体予定と選択中の冒険者の任務を確認できます。予定は棚卸し、MTG、発売日。任務は個人タスクです。",
+    target: "nav-calendar",
+    nav: "calendar",
+    mobilePanel: "quests",
+  },
+  {
+    id: "notices",
+    title: "ギルド速報",
+    message: "期限切れ、依頼、助言、指令はここへ届きます。見落とし防止のため、毎日確認しましょう。",
+    target: "nav-notices",
+    nav: "notices",
+    mobilePanel: "quests",
+  },
+  {
+    id: "my",
+    title: "自分の依頼",
+    message: "受注した依頼はここへ集まります。挑戦中の依頼や討伐完了もここから確認できます。",
+    target: "nav-my",
+    nav: "my",
+    mobilePanel: "quests",
+  },
+  {
+    id: "expedition",
+    title: "遠征",
+    message: "任務を達成すると遠征チケットを獲得できます。冒険者を育成し、遠征へ送り出しましょう。",
+    target: "nav-expedition",
+    nav: "expedition",
+    mobilePanel: "quests",
+  },
+  {
+    id: "growth",
+    title: "冒険者育成",
+    message: "冒険者は成長します。士気、疲労、熟練度、信頼度、装備を管理し、訓練や休息で強くできます。",
+    target: "growth",
+    nav: "expedition",
+    mobilePanel: "quests",
+  },
+  {
+    id: "party",
+    title: "冒険者パーティ",
+    message: "右側の冒険者パーティを切り替えると、任務、ギルド暦、依頼の表示内容も選択中の冒険者に連動します。",
+    target: "party",
+    nav: "notebook",
+    mobilePanel: "party",
+  },
+  {
+    id: "finale",
+    title: "ギルドマスターより",
+    message: "これで準備は整った。ギルドは常に新たな冒険者を求めている。仲間と共に、数々の任務へ挑め。健闘を祈る。",
+  },
+];
+
+function isTutorialCompleted() {
+  if (typeof localStorage === "undefined") return false;
+  return localStorage.getItem(TUTORIAL_STORAGE_KEY) === "true";
+}
+
+function markTutorialCompleted() {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem(TUTORIAL_STORAGE_KEY, "true");
+  localStorage.setItem(GUIDE_STORAGE_KEY, "true");
+}
+
 export default function App() {
   const [hasGuildAccess, setHasGuildAccess] = useState(() => {
     if (typeof localStorage === "undefined") return false;
@@ -262,6 +377,9 @@ export default function App() {
 
   const handleGuildEntry = async (playerName: string, avatarType: string) => {
     const member = await ensureStaffMember(playerName, avatarType);
+    if (!isTutorialCompleted()) {
+      localStorage.setItem(JOIN_MESSAGE_STORAGE_KEY, member.name);
+    }
     localStorage.setItem(GUILD_ACCESS_KEY, "true");
     saveSelectedPlayer(member.name);
     saveSelectedAvatar(member.avatarType);
@@ -287,6 +405,79 @@ export default function App() {
   return <MainApp onLogout={handleGuildLogout} />;
 }
 
+function EntryPrologue({
+  onNext,
+  onSkip,
+}: {
+  onNext: () => void;
+  onSkip: () => void;
+}) {
+  const messages = [
+    "其方は今日より、ギルドの一員となる。",
+    "この世界では、多くの任務が日々発生している。",
+    "冒険者たちは、互いに助け合いながら依頼を達成し、ギルドを発展させている。",
+    "やがて其方も、数々の任務へ挑み、名を上げていくことになるだろう。",
+    "さあ、冒険の準備を始めよう。",
+  ];
+  const [index, setIndex] = useState(0);
+  const isLast = index >= messages.length - 1;
+
+  const advance = () => {
+    if (isLast) {
+      onNext();
+      return;
+    }
+    setIndex((prev) => prev + 1);
+  };
+
+  return (
+    <div className="quest-bg h-dvh overflow-hidden relative flex items-center justify-center bg-black px-4">
+      <button
+        type="button"
+        onClick={onSkip}
+        className="quest-btn-ghost absolute right-3 top-3 z-20 min-h-10 px-3 text-xs"
+      >
+        スキップ
+      </button>
+      <div className="absolute inset-0 bg-black/70" />
+      <div className="relative z-10 w-full max-w-3xl text-center">
+        <div className="mb-8 inline-flex flex-col items-center gap-3">
+          <div className="flex h-20 w-20 items-center justify-center border-4 border-[var(--color-gold-bright)] bg-[var(--color-deep)] shadow-[5px_5px_0_#000] animate-pulse-glow">
+            <span className="text-4xl">⚔️</span>
+          </div>
+          <p className="font-[family-name:var(--font-display)] text-[10px] tracking-[0.3em] text-[var(--color-gold)]/80">
+            GUILD QUEST
+          </p>
+          <h1 className="pixel-title gold-text text-3xl font-bold sm:text-5xl">
+            ギルドクエスト
+          </h1>
+        </div>
+
+        <button
+          type="button"
+          onClick={advance}
+          className="rpg-frame w-full border-[var(--color-gold)]/70 bg-[rgba(5,5,16,0.94)] p-5 text-left shadow-[6px_6px_0_#000] sm:p-6"
+        >
+          <p className="mb-3 font-[family-name:var(--font-display)] text-[10px] tracking-[0.22em] text-[var(--color-gold)]/80">
+            第1幕
+          </p>
+          <p className="min-h-[5rem] whitespace-pre-line text-lg leading-9 text-slate-100 text-shadow sm:text-2xl sm:leading-[3rem]">
+            {messages[index]}
+          </p>
+          <div className="mt-5 flex items-center justify-between text-xs text-slate-500">
+            <span>
+              {index + 1} / {messages.length}
+            </span>
+            <span className="text-[var(--color-gold-bright)] animate-pulse">
+              {isLast ? "次へ" : "▼"}
+            </span>
+          </div>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function GuildCodeGate({
   guildCode,
   onEnter,
@@ -299,6 +490,7 @@ function GuildCodeGate({
   const [avatarType, setAvatarType] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [showPrologue, setShowPrologue] = useState(() => !isTutorialCompleted());
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -329,6 +521,18 @@ function GuildCodeGate({
       setSubmitting(false);
     }
   };
+
+  if (showPrologue) {
+    return (
+      <EntryPrologue
+        onNext={() => setShowPrologue(false)}
+        onSkip={() => {
+          markTutorialCompleted();
+          setShowPrologue(false);
+        }}
+      />
+    );
+  }
 
   return (
     <div className="guild-entry-screen quest-bg h-dvh overflow-y-auto relative flex items-start justify-center px-3 pt-2 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] sm:items-center sm:px-4 sm:py-5">
@@ -493,7 +697,7 @@ function GuildCodeConfigError() {
 function MainApp({ onLogout }: { onLogout: () => void }) {
   const { quests, loading, error, reload, findQuest } = useQuests();
   const { staff, loading: staffLoading, reload: reloadStaff } = useStaff();
-  const { logs, loading: logsLoading } = useQuestLogs();
+  const { logs, loading: logsLoading, reload: reloadLogs } = useQuestLogs();
   const {
     events: calendarEvents,
     loading: calendarLoading,
@@ -568,8 +772,9 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
   const [now, setNow] = useState(() => Date.now());
   const [guideOpen, setGuideOpen] = useState(() => {
     if (typeof localStorage === "undefined") return false;
-    return localStorage.getItem(GUIDE_STORAGE_KEY) !== "true";
+    return localStorage.getItem(TUTORIAL_STORAGE_KEY) !== "true";
   });
+  const [tutorialStep, setTutorialStep] = useState(0);
   const [isOnline, setIsOnline] = useState(() =>
     typeof navigator === "undefined" ? true : navigator.onLine,
   );
@@ -654,7 +859,55 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
 
   const closeGuide = () => {
     setGuideOpen(false);
-    localStorage.setItem(GUIDE_STORAGE_KEY, "true");
+    setTaskForm((prev) => (prev.type === "create" ? { type: "closed" } : prev));
+    markTutorialCompleted();
+    if (typeof localStorage !== "undefined") {
+      localStorage.removeItem(JOIN_MESSAGE_STORAGE_KEY);
+    }
+  };
+
+  const openGuide = () => {
+    setTutorialStep(0);
+    setGuideOpen(true);
+  };
+
+  useEffect(() => {
+    if (!guideOpen) return;
+    const step = TUTORIAL_STEPS[tutorialStep] ?? TUTORIAL_STEPS[0];
+    if (step.nav) {
+      navigateTo(step.nav);
+      setQuickFilter(null);
+    }
+    if (step.mobilePanel) {
+      setMobilePanel(step.mobilePanel);
+    }
+    if (step.id === "task-create") {
+      setTaskForm({
+        type: "create",
+        defaults: {
+          title: "チュートリアル任務",
+          description: "チュートリアルで作成する練習用の任務です。",
+          priority: 3,
+          importance: 3,
+          dueDate: toDateInputValue(new Date()),
+          isPublic: false,
+        },
+      });
+      return;
+    }
+    setTaskForm((prev) => (prev.type === "create" ? { type: "closed" } : prev));
+  }, [guideOpen, tutorialStep]);
+
+  const nextTutorialStep = () => {
+    if (tutorialStep >= TUTORIAL_STEPS.length - 1) {
+      closeGuide();
+      return;
+    }
+    setTutorialStep((prev) => prev + 1);
+  };
+
+  const previousTutorialStep = () => {
+    setTutorialStep((prev) => Math.max(0, prev - 1));
   };
 
   const addToast = (message: string, tone: ToastTone = "success") => {
@@ -846,7 +1099,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
   }, [adventurerTasks, ownPlayerName, selectedPlayer]);
 
   const selectedPlayerTasks = useMemo(() => {
-    return visibleTasks;
+    return visibleTasks.filter((task) => task.status !== "completed");
   }, [visibleTasks]);
 
   const canManageSelectedTasks = selectedPlayer === ownPlayerName;
@@ -1020,26 +1273,24 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
   const handleAccept = (questId: number) => {
     const quest = findQuest(questId);
     if (!quest || !selectedPlayer) return;
-    const linkedTask = taskByQuestId.get(quest.id);
-    const shouldAnnounceTransfer =
-      quest.participants.length === 0 &&
-      linkedTask != null &&
-      linkedTask.ownerName !== selectedPlayer;
+    const shouldAnnounceTaskSync = quest.participants.length === 0;
     void runAction(
       `accept-${questId}`,
       () => acceptQuest(quest, selectedPlayer),
       null,
-      (updated) => {
+      () => {
         enqueueGuildMessage(
-          `${selectedPlayer} が『${updated.title}』に参加しました！`,
+          `${selectedPlayer} が依頼を受注しました！`,
           { icon: selectedMember?.avatar ?? "🧙" },
         );
-        if (shouldAnnounceTransfer) {
-          enqueueGuildMessage(
-            `任務が ${selectedPlayer} に引き継がれました！`,
-            { icon: selectedMember?.avatar ?? "🧙" },
-          );
+        if (shouldAnnounceTaskSync) {
+          enqueueGuildMessage("任務が冒険者手帳に記されました。", {
+            icon: selectedMember?.avatar ?? "🧙",
+          });
         }
+        void reloadTasks();
+        void reload();
+        void reloadLogs();
       },
     );
   };
@@ -1047,26 +1298,24 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
   const handleBecomeSuccessor = (questId: number) => {
     const quest = findQuest(questId);
     if (!quest || !selectedPlayer) return;
-    const linkedTask = taskByQuestId.get(quest.id);
-    const shouldAnnounceTransfer =
-      quest.participants.length === 0 &&
-      linkedTask != null &&
-      linkedTask.ownerName !== selectedPlayer;
+    const shouldAnnounceTaskSync = quest.participants.length === 0;
     void runAction(
       `successor-${questId}`,
       () => becomeSuccessor(quest, selectedPlayer),
       null,
-      (updated) => {
+      () => {
         enqueueGuildMessage(
-          `${selectedPlayer} が『${updated.title}』に参加しました！`,
+          `${selectedPlayer} が依頼を受注しました！`,
           { icon: selectedMember?.avatar ?? "🧙" },
         );
-        if (shouldAnnounceTransfer) {
-          enqueueGuildMessage(
-            `任務が ${selectedPlayer} に引き継がれました！`,
-            { icon: selectedMember?.avatar ?? "🧙" },
-          );
+        if (shouldAnnounceTaskSync) {
+          enqueueGuildMessage("任務が冒険者手帳に記されました。", {
+            icon: selectedMember?.avatar ?? "🧙",
+          });
         }
+        void reloadTasks();
+        void reload();
+        void reloadLogs();
       },
     );
   };
@@ -1107,12 +1356,18 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
     setConfirm({ type: "closed" });
     void runAction(
       `complete-${quest.id}`,
-      () => completeQuest(quest, selectedPlayer),
+      () => completeQuestAndTask(quest, selectedPlayer),
       null,
       () => {
+        if (detail.type === "open" && detail.questId === quest.id) {
+          setDetail({ type: "closed" });
+        }
         setCompletionBurst({ title: quest.title, exp, coins, guildExp, tickets });
-        enqueueGuildMessage(`『${quest.title}』を達成しました！`, {
+        enqueueGuildMessage("クエスト達成！", {
           durationMs: 1900,
+        });
+        enqueueGuildMessage("関連する任務も完了しました。", {
+          durationMs: 2200,
         });
         enqueueMessage({
           speaker: "報酬",
@@ -1132,6 +1387,9 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
         window.setTimeout(() => setCompletionBurst(null), 1800);
         void reloadStaff();
         void reloadExpeditions();
+        void reloadTasks();
+        void reload();
+        void reloadLogs();
       },
     );
   };
@@ -1742,7 +2000,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
             <div className="flex items-center gap-1.5 shrink-0">
               <button
                 type="button"
-                onClick={() => setGuideOpen(true)}
+                onClick={openGuide}
                 className="quest-btn-ghost mobile-icon-command px-2 text-xs"
                 aria-label="使い方"
               >
@@ -1764,6 +2022,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                     : setTaskForm({ type: "create" })
                 }
                 disabled={boardDisabled}
+                data-tutorial="task-create"
                 className="quest-btn-primary mobile-post-command text-xs px-2.5 py-1.5 disabled:opacity-50"
               >
                 {nav === "board" ? "掲示" : "任務"}
@@ -1783,7 +2042,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
             }}
             myQuestCount={myQuestCount}
             activeQuestCount={activeQuests.length}
-            onOpenGuide={() => setGuideOpen(true)}
+            onOpenGuide={openGuide}
             className="hidden lg:flex lg:w-56 xl:w-60 shrink-0 h-full min-h-0"
           />
 
@@ -1875,6 +2134,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                           : setTaskForm({ type: "create" })
                       }
                       disabled={boardDisabled}
+                      data-tutorial="task-create"
                       className="quest-btn-primary hidden lg:inline-flex min-h-10 px-3 text-xs disabled:opacity-50"
                     >
                       {nav === "board" ? "直接依頼を掲示" : "任務を記す"}
@@ -1972,7 +2232,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                 disabled={busy}
                 onRename={handleRenamePlayer}
                 onLogout={onLogout}
-                onOpenGuide={() => setGuideOpen(true)}
+                onOpenGuide={openGuide}
               />
             ) : nav === "stats" ? (
               <GuildOverview
@@ -2141,6 +2401,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
           </main>
 
           <aside
+            data-tutorial="party"
             className={`lg:w-[17.5rem] xl:w-[19rem] shrink-0 min-h-0 mx-3 mb-3 lg:mx-0 lg:mb-0 flex-col gap-2 ${
               mobilePanel === "quests" ? "hidden lg:flex" : "flex"
             }`}
@@ -2189,6 +2450,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                   setQuickFilter(null);
                   setMobilePanel("quests");
                 }}
+                data-tutorial={`nav-${item.id}`}
                 className={`min-h-12 flex flex-col items-center justify-center gap-0.5 py-1 text-[9px] font-semibold transition-colors font-[family-name:var(--font-pixel)] ${
                   nav === item.id && mobilePanel === "quests"
                     ? "nav-active"
@@ -2202,6 +2464,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
             <button
               type="button"
               onClick={() => setMobilePanel("party")}
+              data-tutorial="party"
               className={`min-h-12 flex flex-col items-center justify-center gap-0.5 py-1 text-[9px] font-semibold border-l border-[var(--color-gold)]/15 transition-colors font-[family-name:var(--font-pixel)] ${
                 mobilePanel === "party" ? "nav-active" : "text-slate-500"
               }`}
@@ -2369,13 +2632,13 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
 
       <ConfirmModal
         open={confirm.type === "complete"}
-        title="討伐完了にしますか？"
+        title="この依頼を討伐完了にしますか？"
         message={
           confirmQuest
-            ? `「${confirmQuest.title}」を達成ログへ移動します。`
+            ? `「${confirmQuest.title}」を達成ログへ移動します。関連する冒険者手帳の任務も完了になります。`
             : ""
         }
-        confirmLabel="討伐完了"
+        confirmLabel="▶ 討伐完了"
         variant="gold"
         onConfirm={executeComplete}
         onCancel={() => setConfirm({ type: "closed" })}
@@ -2436,7 +2699,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
         disabled={busy}
         onClose={() => setSettingsOpen(false)}
         onRename={handleRenamePlayer}
-        onOpenGuide={() => setGuideOpen(true)}
+        onOpenGuide={openGuide}
         onLogout={() => {
           setSettingsOpen(false);
           onLogout();
@@ -2446,7 +2709,16 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
       <ToastStack toasts={toasts} />
       <RPGMessageWindow message={activeMessage} onDismiss={dismissMessage} />
       {completionBurst && <CompletionBurst reward={completionBurst} />}
-      <GuideModal open={guideOpen} onClose={closeGuide} />
+      <TutorialOverlay
+        open={guideOpen}
+        step={TUTORIAL_STEPS[tutorialStep] ?? TUTORIAL_STEPS[0]}
+        stepIndex={tutorialStep}
+        totalSteps={TUTORIAL_STEPS.length}
+        selectedPlayer={selectedPlayer}
+        onNext={nextTutorialStep}
+        onBack={previousTutorialStep}
+        onSkip={closeGuide}
+      />
     </div>
   );
 }
@@ -2909,7 +3181,7 @@ function SettingsScreen({
               disabled={disabled || submitting}
               className="quest-btn-ghost w-full disabled:opacity-50"
             >
-              初回ガイドを見る
+              チュートリアル再生
             </button>
             <button
               type="button"
@@ -3278,7 +3550,10 @@ function TaskNotebookPanel({
   );
 
   return (
-    <section className="notebook-panel min-h-0 flex-1 overflow-hidden flex flex-col gap-2">
+    <section
+      className="notebook-panel min-h-0 flex-1 overflow-hidden flex flex-col gap-2"
+      data-tutorial="notebook"
+    >
       <div className="rpg-frame notebook-cover p-2.5 sm:p-3 shrink-0">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="min-w-0">
@@ -3522,6 +3797,7 @@ function TaskCard({
               type="button"
               onClick={() => onDelegate(task.id)}
               disabled={busy}
+              data-tutorial="task-delegate"
               className="quest-btn-ghost min-h-11 text-xs disabled:opacity-45"
             >
               任務を依頼書化
@@ -3680,7 +3956,10 @@ function TaskFormModal({
         aria-label="任務フォームを閉じる"
         onClick={submitting ? undefined : onClose}
       />
-      <section className="modal-panel relative rpg-frame max-h-[92dvh] w-full max-w-2xl overflow-y-auto custom-scroll p-5">
+      <section
+        className="modal-panel relative rpg-frame max-h-[92dvh] w-full max-w-2xl overflow-y-auto custom-scroll p-5"
+        data-tutorial="task-form"
+      >
         <header className="border-b-2 border-[var(--color-gold)]/30 pb-3">
           <p className="font-[family-name:var(--font-display)] text-[10px] tracking-[0.22em] text-[var(--color-gold)]/80">
             ADVENTURER NOTEBOOK
@@ -5818,7 +6097,7 @@ function SettingsModal({
             disabled={disabled || submitting}
             className="quest-btn-ghost w-full disabled:opacity-50"
           >
-            初回ガイドを見る
+            チュートリアル再生
           </button>
           <button
             type="button"
@@ -6041,156 +6320,196 @@ function RPGMessageWindow({
   );
 }
 
-function GuideModal({
+function TutorialOverlay({
   open,
-  onClose,
+  step,
+  stepIndex,
+  totalSteps,
+  selectedPlayer,
+  onNext,
+  onBack,
+  onSkip,
 }: {
   open: boolean;
-  onClose: () => void;
+  step: TutorialStep;
+  stepIndex: number;
+  totalSteps: number;
+  selectedPlayer: string;
+  onNext: () => void;
+  onBack: () => void;
+  onSkip: () => void;
 }) {
-  const [activeIndex, setActiveIndex] = useState(0);
-  const items = [
-    {
-      title: "ギルドクエストとは",
-      text: "ギルドクエストは、日々の作業を“任務”として管理し、必要に応じて仲間へ依頼できる職場用RPGツールです。仕事をただのタスクではなく、ギルドの依頼として楽しく共有できます。",
-    },
-    {
-      title: "冒険者手帳",
-      text: "冒険者手帳は、自分が持っている任務を記録する場所です。今日やること、今週やること、未来の作業を整理できます。基本的には、まずここに任務を記すところから始めます。",
-    },
-    {
-      title: "任務を記す",
-      text: "任務には、タイトル、説明、緊急度、重要度、納期、公開設定を登録できます。公開した任務は他の冒険者にも見えるようになります。非公開の任務は本人だけが確認できます。",
-    },
-    {
-      title: "ギルド依頼",
-      text: "自分だけでは対応が難しい任務は、ギルド依頼として掲示できます。掲示された依頼は、手が空いている冒険者が参加できます。",
-    },
-    {
-      title: "依頼を出す2つの方法",
-      text: "依頼の出し方は2つあります。基本は、冒険者手帳に記した任務を“ギルドへ依頼する”方法です。急ぎの場合は、ギルド依頼画面から直接依頼を掲示することもできます。直掲示した依頼も、自動的に任務として記録されます。",
-    },
-    {
-      title: "参加・挑戦・助っ人募集",
-      text: "依頼には必要人員が設定されています。必要人数に達するまでは参加者を募集します。定員に達すると挑戦中になります。挑戦者が助っ人募集を出すと、助っ人募集欄に表示され、他の冒険者が継承・参加できます。",
-    },
-    {
-      title: "ギルド暦",
-      text: "ギルド暦では、全体の予定と選択中の冒険者の任務を確認できます。予定は新商品発売、棚卸し、MTGなど全員が知るべき情報です。任務は個人の作業であり、公開設定によって表示範囲が変わります。",
-    },
-    {
-      title: "ギルド速報",
-      text: "ギルド速報には、期限が近い任務、届いた依頼、助言、ギルド指令、重要な予定などが表示されます。見落としを防ぐためのお知らせ欄です。",
-    },
-    {
-      title: "自分の依頼",
-      text: "自分の依頼では、自分が参加している依頼や挑戦中の依頼を確認できます。まずはここで、自分が今やるべき依頼を確認してください。",
-    },
-    {
-      title: "遠征",
-      text: "遠征は放置型の育成要素です。依頼を達成すると遠征チケットを獲得できます。遠征に出すと、時間経過後にEXPやGOLDなどの報酬を受け取れます。",
-    },
-    {
-      title: "冒険者パーティ",
-      text: "冒険者パーティでは、登録されているメンバーを確認できます。右側のパーティ欄で選択した冒険者に応じて、本日の任務やギルド暦の表示内容が変わります。",
-    },
-    {
-      title: "EXP・Lv・報酬",
-      text: "依頼を達成するとEXPを獲得し、Lvが上がります。達成や遠征を通じて、自分の冒険者を育てることができます。",
-    },
-    {
-      title: "基本のおすすめ運用",
-      text: "まずは冒険者手帳に任務を記します。自分でできるものは自分で進め、誰かに手伝ってほしいものはギルド依頼へ掲示します。完了したら討伐完了として記録し、報酬を受け取りましょう。",
-    },
-  ];
-  const activeItem = items[activeIndex] ?? items[0];
+  const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
+
+  useEffect(() => {
+    if (!open || !step.target || typeof document === "undefined") {
+      setTargetRect(null);
+      return;
+    }
+
+    let timer: number | null = null;
+    let attempts = 0;
+    const updateTarget = () => {
+      const target = document.querySelector<HTMLElement>(
+        `[data-tutorial="${step.target}"]`,
+      );
+      if (!target) {
+        setTargetRect(null);
+        if (attempts < 8) {
+          attempts += 1;
+          timer = window.setTimeout(updateTarget, 120);
+        }
+        return;
+      }
+      attempts = 0;
+      target.scrollIntoView({
+        block: "center",
+        inline: "center",
+        behavior: "smooth",
+      });
+      if (timer != null) {
+        window.clearTimeout(timer);
+      }
+      timer = window.setTimeout(() => {
+        setTargetRect(target.getBoundingClientRect());
+      }, 140);
+    };
+
+    updateTarget();
+    window.addEventListener("resize", updateTarget);
+    window.addEventListener("scroll", updateTarget, true);
+    return () => {
+      if (timer != null) {
+        window.clearTimeout(timer);
+      }
+      window.removeEventListener("resize", updateTarget);
+      window.removeEventListener("scroll", updateTarget, true);
+    };
+  }, [open, step.target, stepIndex]);
 
   if (!open) return null;
 
+  const storedJoinName =
+    typeof localStorage === "undefined"
+      ? null
+      : localStorage.getItem(JOIN_MESSAGE_STORAGE_KEY);
+  const playerName = storedJoinName || selectedPlayer || "新たな冒険者";
+  const isStoryStep = step.id === "join" || step.id === "finale";
+  const isReplayIntro = step.id === "join" && !storedJoinName;
+  const message = isReplayIntro
+    ? "ギルドマスターから、ギルド運営の基本をもう一度案内します。"
+    : step.message.replace("{playerName}", playerName);
+  const isLastStep = stepIndex >= totalSteps - 1;
+  const spotlightStyle =
+    targetRect != null
+      ? ({
+          left: Math.max(8, targetRect.left - 6),
+          top: Math.max(8, targetRect.top - 6),
+          width: targetRect.width + 12,
+          height: targetRect.height + 12,
+        } satisfies CSSProperties)
+      : undefined;
+
   return (
     <div
-      className="fixed inset-0 z-[75] flex items-end sm:items-center justify-center p-0 sm:p-4"
+      className="fixed inset-0 z-[90] pointer-events-none"
       role="dialog"
       aria-modal="true"
-      aria-labelledby="guide-title"
+      aria-labelledby="tutorial-title"
     >
+      <div className="absolute inset-0 bg-black/70" />
+      {!isStoryStep && targetRect && spotlightStyle && (
+        <div
+          className="absolute border-4 border-[var(--color-gold-bright)] bg-[rgba(255,232,130,0.04)] shadow-[0_0_0_9999px_rgba(0,0,0,0.58),0_0_28px_rgba(250,220,120,0.72),4px_4px_0_#000]"
+          style={spotlightStyle}
+          aria-hidden
+        />
+      )}
+      {!isStoryStep && !targetRect && (
+        <div className="absolute inset-x-4 top-24 mx-auto h-1 max-w-lg bg-[var(--color-gold)]/50 shadow-[0_0_18px_rgba(250,220,120,0.55)]" />
+      )}
+
       <button
         type="button"
-        className="modal-backdrop absolute inset-0 bg-black/80"
-        aria-label="初回ガイドを閉じる"
-        onClick={onClose}
-      />
-      <div className="modal-panel relative rpg-frame max-h-[calc(100dvh-32px)] w-full max-w-4xl overflow-y-auto custom-scroll p-5 pb-[calc(env(safe-area-inset-bottom)+20px)]">
-        <p className="font-[family-name:var(--font-display)] text-[10px] tracking-[0.22em] text-[var(--color-gold)]/80">
-          GUILD GUIDE
-        </p>
-        <h2 id="guide-title" className="pixel-window-title mt-1 text-xl font-bold">
-          ギルドクエストの使い方
-        </h2>
-        <p className="mt-2 text-sm leading-relaxed text-slate-400">
-          冒険者手帳、ギルド依頼、ギルド暦、遠征までの基本運用をまとめています。
-        </p>
+        onClick={onSkip}
+        className="quest-btn-ghost pointer-events-auto absolute right-3 top-3 z-[92] min-h-9 px-3 py-1.5 text-xs sm:right-5 sm:top-5"
+      >
+        スキップ
+      </button>
 
-        <div className="mt-4 hidden min-h-0 grid-cols-[15rem_minmax(0,1fr)] gap-3 md:grid">
-          <nav className="max-h-[58dvh] overflow-y-auto custom-scroll pr-1">
-            <div className="grid gap-1">
-              {items.map((item, index) => (
-                <button
-                  key={item.title}
-                  type="button"
-                  onClick={() => setActiveIndex(index)}
-                  className={`pixel-menu-button min-h-10 px-2 py-2 text-left text-xs ${
-                    index === activeIndex ? "is-selected" : ""
-                  }`}
-                >
-                  <span className="mr-2 text-[var(--color-gold-bright)]">
-                    {index + 1}
-                  </span>
-                  {item.title}
-                </button>
-              ))}
+      <section
+        className={`pointer-events-auto absolute ${
+          isStoryStep
+            ? "left-1/2 top-1/2 w-[min(92vw,42rem)] -translate-x-1/2 -translate-y-1/2"
+            : "inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+5.25rem)] mx-auto max-w-2xl sm:bottom-8"
+        }`}
+      >
+        <div className="rpg-frame relative overflow-hidden bg-[rgba(5,5,16,0.96)] p-4 shadow-[6px_6px_0_#000] sm:p-5">
+          <div className="pointer-events-none absolute inset-0 opacity-[0.08] [background-image:linear-gradient(0deg,#fff_1px,transparent_1px)] [background-size:100%_8px]" />
+          <div className="relative flex gap-3">
+            <div className="hidden shrink-0 sm:block">
+              <div className="grid h-20 w-20 place-items-center border-4 border-[var(--color-gold)] bg-black/55 text-4xl shadow-[4px_4px_0_#000]">
+                {step.id === "finale" ? "👑" : "🧙"}
+              </div>
             </div>
-          </nav>
-          <section className="min-h-[18rem] border-2 border-white/20 bg-black/22 p-4 shadow-[3px_3px_0_#000]">
-            <p className="font-[family-name:var(--font-display)] text-[10px] tracking-[0.2em] text-[var(--color-gold)]/70">
-              GUIDE {activeIndex + 1}
-            </p>
-            <h3 className="mt-2 text-lg font-semibold text-[var(--color-gold-bright)]">
-              {activeItem.title}
-            </h3>
-            <p className="mt-3 text-sm leading-7 text-slate-300">
-              {activeItem.text}
-            </p>
-          </section>
-        </div>
-
-        <div className="mt-4 space-y-2 md:hidden">
-          {items.map((item, index) => (
-            <details
-              key={item.title}
-              className="border-2 border-white/20 bg-black/22 p-3 shadow-[2px_2px_0_#000]"
-              open={index === 0}
-            >
-              <summary className="cursor-pointer text-sm font-semibold text-slate-100">
-                <span className="mr-2 text-[var(--color-gold-bright)]">
-                  {index + 1}
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="border-2 border-[var(--color-gold)] bg-black px-2 py-1 font-[family-name:var(--font-display)] text-[10px] tracking-[0.16em] text-[var(--color-gold-bright)] shadow-[2px_2px_0_#000]">
+                  [ギルドマスター]
                 </span>
-                {item.title}
-              </summary>
-              <p className="mt-2 text-xs leading-6 text-slate-400">
-                {item.text}
+                <span className="text-[10px] text-slate-500">
+                  {stepIndex + 1} / {totalSteps}
+                </span>
+              </div>
+              <h2
+                id="tutorial-title"
+                className="pixel-window-title mt-3 text-lg font-bold text-[var(--color-gold-bright)] sm:text-xl"
+              >
+                {step.title}
+              </h2>
+              <p className="mt-3 whitespace-pre-line text-sm leading-7 text-slate-100 text-shadow sm:text-base sm:leading-8">
+                {message}
               </p>
-            </details>
-          ))}
+              {step.id === "task-create" && (
+                <p className="mt-2 border-l-4 border-[var(--color-gold)]/70 bg-[var(--color-gold)]/10 px-3 py-2 text-xs leading-6 text-[var(--color-gold-bright)]">
+                  練習用の内容を入れています。保存して試しても、閉じて次へ進んでも構いません。
+                </p>
+              )}
+              {step.target && !targetRect && !isStoryStep && (
+                <p className="mt-2 text-[11px] leading-5 text-slate-500">
+                  対象の画面に切り替えています。表示されない場合は、そのまま次へ進めます。
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="relative mt-4 flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={onBack}
+              disabled={stepIndex === 0}
+              className="quest-btn-secondary min-h-10 px-3 py-2 text-xs disabled:opacity-40"
+            >
+              戻る
+            </button>
+            <div className="flex items-center gap-2">
+              <span
+                className="animate-pulse text-[var(--color-gold-bright)]"
+                aria-hidden
+              >
+                ▼
+              </span>
+              <button
+                type="button"
+                onClick={onNext}
+                className="quest-btn-primary min-h-10 px-4 py-2 text-xs sm:text-sm"
+              >
+                {isLastStep ? "冒険を始める" : "次へ"}
+              </button>
+            </div>
+          </div>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="quest-btn-primary mt-5 w-full"
-        >
-          閉じる
-        </button>
-      </div>
+      </section>
     </div>
   );
 }
@@ -7137,7 +7456,10 @@ function GrowthStatusPanel({
   ];
 
   return (
-    <section className="mb-3 border-2 border-[var(--color-gold)]/35 bg-black/25 p-3 shadow-[3px_3px_0_#000]">
+    <section
+      className="mb-3 border-2 border-[var(--color-gold)]/35 bg-black/25 p-3 shadow-[3px_3px_0_#000]"
+      data-tutorial="growth"
+    >
       <div className="grid gap-3 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
         <div className="flex min-w-0 items-center gap-3">
           {selectedMember ? (

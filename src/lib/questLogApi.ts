@@ -3,9 +3,11 @@ import { requireSupabase } from "./supabase";
 export type QuestLogAction =
   | "created"
   | "accepted"
+  | "quest_accepted_task_assigned"
   | "succession_requested"
   | "successor_added"
   | "completed"
+  | "quest_completed_task_completed"
   | "edited"
   | "deleted"
   | "reopened"
@@ -98,9 +100,11 @@ export async function insertQuestLog(params: {
 export const LOG_ACTION_LABELS: Record<QuestLogAction, string> = {
   created: "新しい依頼を掲示",
   accepted: "ギルド依頼に参加",
+  quest_accepted_task_assigned: "手帳へ任務追加",
   succession_requested: "助っ人募集を掲示",
   successor_added: "助っ人として参加",
   completed: "討伐完了",
+  quest_completed_task_completed: "依頼と任務を討伐完了",
   edited: "クエスト内容を編集",
   deleted: "クエストを削除",
   reopened: "クエストを再掲",
